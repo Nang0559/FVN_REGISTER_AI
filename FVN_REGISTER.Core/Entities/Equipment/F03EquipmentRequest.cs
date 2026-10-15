@@ -1,0 +1,50 @@
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using FVN_REGISTER.Core.Enums;
+namespace FVN_REGISTER.Core.Entities.Equipment;
+[Table("F03EquipmentRequests")]
+public sealed class F03EquipmentRequest : BaseRequestEntity
+{
+    public EquipmentRequestKind RequestKind { get; set; }
+    public int? AssetId { get; set; }
+
+    // Immutable before/after snapshots for an independently approved asset change.
+    [Column(TypeName = "nvarchar(max)")] public string? AssetBeforeSnapshotJson { get; set; }
+    [Column(TypeName = "nvarchar(max)")] public string? AssetAfterSnapshotJson { get; set; }
+    [StringLength(64)] public string? AssetBeforeHash { get; set; }
+    public DateTime? AssetSnapshotCapturedAtUtc { get; set; }
+    public DateTime? AssetChangeAppliedAtUtc { get; set; }
+    public int? FormId { get; set; }
+    public int? FormSubmissionId { get; set; }
+    [StringLength(50)] public string? FormCode { get; set; }
+    [Required, StringLength(50)] public string SelectedApproverCode { get; set; } = string.Empty;
+    [Required, StringLength(128)] public string QrToken { get; set; } = string.Empty;
+    public int OperatorUserId { get; set; }
+    [StringLength(50)] public string? ResponsibleEmployeeCode { get; set; }
+    [Required, StringLength(250)] public string EquipmentName { get; set; } = string.Empty;
+    [StringLength(1000)] public string? Specification { get; set; }
+    [StringLength(100)] public string? SerialNumber { get; set; }
+    [StringLength(50)] public string? AssetCode { get; set; }
+    [Column(TypeName = "decimal(18,2)")] public decimal PurchasePrice { get; set; }
+    public DateTime? PurchaseDate { get; set; }
+    public DateTime? ExpectedDepreciationDate { get; set; }
+    [StringLength(250)] public string? Location { get; set; }
+    [StringLength(1000)] public string? Note { get; set; }
+    /// <summary>Schema-driven (custom) field values staged on the draft; copied to the asset when approved.</summary>
+    [Column(TypeName = "nvarchar(max)")] public string? CustomDataJson { get; set; }
+    public bool EndpointAgentEligible { get; set; }
+    [StringLength(30)] public string? EndpointOsFamily { get; set; }
+    public DateTime? RepairDate { get; set; }
+    [StringLength(1000)] public string? RepairContent { get; set; }
+    [StringLength(250)] public string? RepairVendor { get; set; }
+    [Column(TypeName = "decimal(18,2)")] public decimal? RepairCost { get; set; }
+    [StringLength(1000)] public string? RepairResult { get; set; }
+
+    public int? RepairResponsibleDeptCode { get; set; }
+    [StringLength(50)] public string? RepairAssigneeEmployeeCode { get; set; }
+    public int? RepairAssigneeUserId { get; set; }
+    [StringLength(1000)] public string? RepairFeedback { get; set; }
+    public DateTime? RepairCompletedAt { get; set; }
+
+    public F03EquipmentAsset? Asset { get; set; }
+}

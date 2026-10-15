@@ -1,0 +1,9 @@
+namespace FVN_REGISTER.Core.Enums;
+
+public enum EquipmentRequestKind
+{
+    Registration = 1,
+    Repair = 2,
+    Form = 3,
+    AssetChange = 4
+}

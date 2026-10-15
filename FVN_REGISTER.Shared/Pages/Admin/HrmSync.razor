@@ -1,0 +1,339 @@
+@page "/admin/hrm-sync"
+@attribute [Authorize]
+@using FVN_REGISTER.Contract.Dtos.HrmSync
+@using FVN_REGISTER.Shared.Services.HrmSync
+@using Microsoft.AspNetCore.Authorization
+@using FVN_REGISTER.Core.Constants
+@inherits AppComponentBase
+
+@inject IHrmSyncClientService SyncService
+@inject IHrmSyncReviewClientService ReviewService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>@Language.T("hrm.dongBoDuLieuHrm")</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudIcon Icon="@Icons.Material.Filled.Sync" Color="Color.Primary" Size="Size.Large" />
+    <div>
+        <MudText Typo="Typo.h5" Style="font-weight:700">@Language.T("hrm.dongBoDuLieuHrm2")</MudText>
+        <MudText Typo="Typo.caption" Color="Color.Secondary">
+            @Language.T("hrm.pipelineALoaiNghiBo")
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Rule"
+               OnClick="@(() => Navigation.NavigateTo("/admin/approval-policies"))">
+        @Language.T("security.policies")
+    </MudButton>
+
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.WarningAmber"
+               Color="Color.Warning" OnClick="@(() => Navigation.NavigateTo("/admin/hrm-sync-review"))">
+        Conflict <MudBadge Content="@_conflictCount" Color="Color.Error" Class="ml-2" />
+    </MudButton>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="LoadAsync" Disabled="@_loading">
+        @Language.T("common.refresh")
+    </MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Sync"
+               OnClick="RunAllAsync" Disabled="@(_loading || _status?.IsRunning == true)">
+        @Language.T("hrm.dongBoTatCa")
+    </MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+               StartIcon="@Icons.Material.Filled.Security"
+               OnClick="ReconcileSecurityAsync" Disabled="@(_loading || _status?.IsRunning == true)">
+        @Language.T("hrm.dongBoHrmUserApprover")
+    </MudButton>
+</MudStack>
+
+@if (_status?.IsRunning == true)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Class="mb-4">
+        <MudText Typo="Typo.body2"><b>@Language.T("hrm.dangDongBoHrm")</b></MudText>
+        @if (_status.StartedAt.HasValue)
+        {
+            <MudText Typo="Typo.caption">
+                @Language.T("hrm.batDauNguoiChay", _status.StartedAt.Value.ToString("dd/MM/yyyy HH:mm:ss"), _status.TriggeredBy)
+            </MudText>
+        }
+    </MudAlert>
+}
+else if (_status?.LastRun != null)
+{
+    <MudAlert Severity="@(_status.LastRun.Success? Severity.Success: Severity.Error)" Class="mb-4">
+        <MudText Typo="Typo.body2"><b>@(_status.LastRun.Success? Language.T("hrm.dongBoHoanTat") : Language.T("hrm.dongBoCoLoi"))</b></MudText>
+        <MudText Typo="Typo.caption">@_status.LastRun.Summary</MudText>
+    </MudAlert>
+}
+else
+{
+    <MudAlert Severity="Severity.Info" Class="mb-4">
+        @Language.T("hrm.chuaCoPhienDongBo")
+    </MudAlert>
+}
+
+<MudGrid Class="mb-4">
+    @foreach (var master in _masters)
+    {
+        var job = _status?.LastRun?.Jobs.FirstOrDefault(x => x.EntityType.Equals(master.EntityType, StringComparison.OrdinalIgnoreCase));
+        <MudItem xs="12" sm="6" md="4" lg="2">
+            <MudPaper Elevation="1" Class="pa-4" Style="border-radius:12px; height:100%">
+                <MudStack Spacing="1">
+                    <MudStack Row="true" AlignItems="AlignItems.Center">
+                        <MudIcon Icon="@master.Icon" Color="Color.Primary" />
+                        <MudText Typo="Typo.subtitle1" Style="font-weight:700">@master.Name</MudText>
+                    </MudStack>
+
+                    @if (job == null)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default">@Language.T("hrm.chuaChay")</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(!job.Success ? Color.Error : job.TotalSource == 0 ? Color.Warning : Color.Success)">
+                            @(!job.Success ? Language.T("hrm.coLoi") : job.TotalSource == 0 ? "Không có dữ liệu nguồn" : Language.T("common.success"))
+                        </MudChip>
+                        <MudText Typo="Typo.caption">@Language.T("hrm.nguon", job.TotalSource)</MudText>
+                        <MudText Typo="Typo.caption">
+                            +@job.Added · ↻@job.Updated · −@job.Deactivated · =@job.Unchanged
+                        </MudText>
+                        @if (SecurityEntities.Contains(master.EntityType) && !string.IsNullOrWhiteSpace(job.Summary))
+                        {
+                            <MudText Typo="Typo.caption" Color="@(job.TotalSource == 0 ? Color.Warning : Color.Secondary)">
+                                @job.Summary
+                            </MudText>
+                        }
+                        @if (job.Errors.Count > 0)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Error">@job.Errors.First()</MudText>
+                        }
+                    }
+
+                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
+                               Disabled="@(_loading || _status?.IsRunning == true)"
+                               OnClick="@(() => RunCardAsync(master.EntityType))">
+                        @Language.T("hrm.dongBoRieng")
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+@if (_status?.LastRun != null)
+{
+    <MudPaper Elevation="1" Class="mb-4" Style="border-radius:12px; overflow:hidden">
+        <MudStack Class="pa-4" Spacing="1">
+            <MudText Typo="Typo.h6">@Language.T("hrm.ketQuaPhienGanNhat")</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                @_status.LastRun.StartedAt.ToString("dd/MM/yyyy HH:mm:ss")
+                @if (_status.LastRun.FinishedAt.HasValue)
+                {
+                    <span> → @_status.LastRun.FinishedAt.Value.ToString("HH:mm:ss")</span>
+                }
+                · @_status.LastRun.TriggeredBy
+            </MudText>
+        </MudStack>
+
+        <MudTable Items="@_status.LastRun.Jobs" Dense="true" Hover="true" Striped="true">
+            <HeaderContent>
+                <MudTh>@Language.T("hrm.master")</MudTh>
+                <MudTh>@Language.T("common.status")</MudTh>
+                <MudTh Style="text-align:right">@Language.T("common.nguon")</MudTh>
+                <MudTh Style="text-align:right">@Language.T("common.add")</MudTh>
+                <MudTh Style="text-align:right">@Language.T("hrm.capNhat")</MudTh>
+                <MudTh Style="text-align:right">@Language.T("hrm.voHieu")</MudTh>
+                <MudTh Style="text-align:right">@Language.T("hrm.khongDoi")</MudTh>
+                <MudTh>@Language.T("common.detail")</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd><b>@context.EntityType</b></MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(!context.Success ? Color.Error : context.TotalSource == 0 ? Color.Warning : Color.Success)">
+                        @(!context.Success ? Language.T("common.error") : context.TotalSource == 0 ? "EMPTY" : "OK")
+                    </MudChip>
+                </MudTd>
+                <MudTd Style="text-align:right">@context.TotalSource</MudTd>
+                <MudTd Style="text-align:right">@context.Added</MudTd>
+                <MudTd Style="text-align:right">@context.Updated</MudTd>
+                <MudTd Style="text-align:right">@context.Deactivated</MudTd>
+                <MudTd Style="text-align:right">@context.Unchanged</MudTd>
+                <MudTd>
+                    <MudText Typo="Typo.caption">@context.Summary</MudText>
+                    @foreach (var error in context.Errors)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Error">@error</MudText>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+@code {
+    private sealed record MasterInfo(string EntityType, string Name, string Icon);
+
+    private MasterInfo[] _masters =>
+    [
+        new("LeaveType", Language.T("common.loaiNghi"), Icons.Material.Filled.EventBusy),
+        new("Department", Language.T("equipment.assigned.department"), Icons.Material.Filled.Business),
+        new("Position", Language.T("common.position"), Icons.Material.Filled.Badge),
+        new("Employee", Language.T("common.employee"), Icons.Material.Filled.People),
+        new("User", "User", Icons.Material.Filled.Person),
+        new("Approver", "Approver", Icons.Material.Filled.VerifiedUser)
+    ];
+
+    // Các entity do bước provision Security tạo ra (không có importer/job riêng)
+    private static readonly HashSet<string> SecurityEntities =
+        new(StringComparer.OrdinalIgnoreCase) { "User", "Approver" };
+
+    private HrmSyncRuntimeStatusDto? _status;
+    private int _conflictCount;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var status = await SyncService.GetStatusAsync();
+            if (status.IsSuccess)
+                _status = status.Data;
+            else
+                Snackbar.Add(status.Message ?? Language.T("hrm.khongTaiDuocTrangThai"), Severity.Error);
+
+            var conflicts = await ReviewService.CountAsync();
+            if (conflicts.IsSuccess)
+                _conflictCount = conflicts.Data;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // "Đồng bộ riêng" trên card: User/Approver -> chỉ chạy Security; còn lại -> chạy entity đó
+    private Task RunCardAsync(string entityType)
+        => SecurityEntities.Contains(entityType)
+            ? ReconcileSecurityOnlyAsync()
+            : RunEntityAsync(entityType);
+
+    // Chạy riêng bước User/Approver, giữ nguyên các job HRM của phiên đang hiển thị
+    private async Task ReconcileSecurityOnlyAsync()
+    {
+        _loading = true;
+        try
+        {
+            var security = await SyncService.ReconcileSecurityAsync();
+            if (!security.IsSuccess || security.Data == null)
+            {
+                Snackbar.Add(security.Message ?? "Không thể đồng bộ User/Approver.", Severity.Error);
+                return;
+            }
+
+            var run = security.Data;
+
+            // Giữ lại các job HRM (không phải User/Approver) của phiên đang hiển thị
+            var keep = _status?.LastRun?.Jobs
+                .Where(j => !SecurityEntities.Contains(j.EntityType)
+                            && !j.EntityType.Equals("SecurityProvisioning", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (keep is { Count: > 0 })
+            {
+                run.Jobs.InsertRange(0, keep);
+                run.Success = run.Jobs.All(x => x.Success);
+            }
+
+            _status = new HrmSyncRuntimeStatusDto { IsRunning = false, LastRun = run };
+            Snackbar.Add(BuildSecurityMessage(run.Jobs) ?? run.Summary ?? "Đã chạy, không có job User/Approver.",
+                run.Success ? Severity.Success : Severity.Warning);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // Thông báo có số lượng cụ thể cho User/Approver; trả null nếu không có job nào
+    private static string? BuildSecurityMessage(IEnumerable<HrmSyncJobRunDto> jobs)
+    {
+        var parts = jobs
+            .Where(j => SecurityEntities.Contains(j.EntityType))
+            .Select(j => $"{j.EntityType}: nguồn {j.TotalSource}, +{j.Added} ↻{j.Updated} −{j.Deactivated} ={j.Unchanged}")
+            .ToList();
+        return parts.Count > 0 ? string.Join(" | ", parts) : null;
+    }
+
+    private async Task RunAllAsync()
+    {
+        _loading = true;
+        try
+        {
+            var result = await SyncService.RunAllAsync();
+            if (!result.IsSuccess || result.Data == null)
+            {
+                Snackbar.Add(result.Message ?? Language.T("hrm.khongTheChayDongBo"), Severity.Error);
+                return;
+            }
+
+            _status = new HrmSyncRuntimeStatusDto { IsRunning = false, LastRun = result.Data };
+
+            var baseMessage = result.Data.Success
+                ? Language.T("hrm.dongBoHrmHoanTat")
+                : Language.T("hrm.dongBoHrmHoanTat2");
+            var securityMessage = BuildSecurityMessage(result.Data.Jobs);
+
+            Snackbar.Add(
+                securityMessage == null ? baseMessage : $"{baseMessage} — {securityMessage}",
+                result.Data.Success ? Severity.Success : Severity.Warning);
+
+            await RefreshConflictCountAsync();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // Nút "Đồng bộ HRM + User + Approver":
+    // RunAll phía backend đã gồm: import HRM -> đồng bộ F03* -> provision F03Users/F03Approvers,
+    // nên chỉ cần gọi RunAllAsync (không gọi thêm ReconcileSecurity để tránh chạy 2 lần và lặp job).
+    private Task ReconcileSecurityAsync() => RunAllAsync();
+
+    private async Task RunEntityAsync(string entityType)
+    {
+        _loading = true;
+        try
+        {
+            var result = await SyncService.RunEntityAsync(entityType);
+            if (!result.IsSuccess || result.Data == null)
+            {
+                Snackbar.Add(result.Message ?? Language.T("hrm.khongTheDongBo", entityType), Severity.Error);
+                return;
+            }
+
+            _status = new HrmSyncRuntimeStatusDto { IsRunning = false, LastRun = result.Data };
+            Snackbar.Add(result.Data.Success
+                ? Language.T("hrm.daDongBo", entityType)
+                : Language.T("hrm.dongBoCoLoi2", entityType),
+                result.Data.Success ? Severity.Success : Severity.Warning);
+            await RefreshConflictCountAsync();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RefreshConflictCountAsync()
+    {
+        var result = await ReviewService.CountAsync();
+        if (result.IsSuccess)
+            _conflictCount = result.Data;
+    }
+}

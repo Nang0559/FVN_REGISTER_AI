@@ -1,0 +1,220 @@
+﻿using FVN_REGISTER.Application.Interfaces.HrmSync;
+using FVN_REGISTER.Contract.Responses;
+using FVN_REGISTER.Core.Enums;
+using FVN_REGISTER.Core.Constants;
+using FVN_REGISTER.Core.Interfaces;
+using FVN_REGISTER.Core.Repositories;
+using Microsoft.EntityFrameworkCore;
+
+namespace FVN_REGISTER.Infrastructure.Services.HrmSync.SyncJob.BaseSyncJob
+{
+    /// <summary>Gom các entity vừa xử lý trong 1 lần RunAsync — dùng cho AfterBatchAsync hook.</summary>
+    public class HrmSyncBatchContext<TEntity>
+    {
+        public List<TEntity> Added { get; } = new();
+        public List<TEntity> Updated { get; } = new();
+        public List<TEntity> Deleted { get; } = new();
+        public List<TEntity> Processed { get; } = new();
+        public List<string> ProvisioningErrors { get; } = new();
+    }
+
+    /// <summary>
+    /// Khung xử lý đồng bộ 1 bảng HRM.
+    ///
+    /// Transaction chỉ bao quanh batch chính (Employee/Department/...). Sau khi
+    /// SaveChanges thành công, transaction được commit trước khi chạy AfterBatchAsync.
+    /// Các hook như User/Approver provisioning vì vậy không giữ lock của transaction
+    /// HRM trong suốt thời gian xử lý. Hook tự bắt lỗi provisioning và ghi review flag.
+    /// </summary>
+    public abstract class HrmSyncJob<TStaging, TEntity> : IHrmSyncJob
+       where TStaging : class, IHrmStagingEntity
+       where TEntity : class
+    {
+        protected readonly IUnitOfWork Uow;
+
+        protected HrmSyncJob(IUnitOfWork uow) => Uow = uow;
+
+        public abstract string EntityType { get; }
+        public virtual int SyncOrder => 0;
+        public virtual bool IsBlockingDependency => false;
+
+        protected abstract Task<Dictionary<string, TEntity>> LoadExistingEntitiesAsync(
+            List<string> keys, CancellationToken ct);
+
+        protected abstract TEntity MapToNewEntity(TStaging staging);
+        protected abstract bool ApplyUpdate(TEntity entity, TStaging staging);
+        protected abstract bool ApplyDelete(TEntity entity);
+
+        /// <summary>
+        /// Chạy sau khi batch chính đã commit. Hook có thể đọc dữ liệu HRM vừa persist
+        /// và ghi entity phụ trợ mà không giữ transaction/lock của batch chính.
+        /// </summary>
+        protected virtual Task AfterBatchAsync(HrmSyncBatchContext<TEntity> batchContext, CancellationToken ct)
+            => Task.CompletedTask;
+
+        public virtual async Task<HrmSyncResult> RunAsync(CancellationToken ct = default)
+        {
+            var result = new HrmSyncResult();
+
+            var pending = await Uow.Repository<TStaging>().Query()
+                .Where(x => !x.IsProcessed)
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(ct);
+
+            if (pending.Count == 0) return result;
+
+            result.TotalSource = pending.Count;
+
+            var groups = pending.GroupBy(x => x.EntityKey).ToList();
+
+            var latest = groups
+                .Select(g => g.OrderByDescending(x => x.CreatedAt)
+                    .ThenByDescending(x => x.Id)
+                    .First())
+                .ToList();
+
+            var superseded = groups
+                .SelectMany(g => g.OrderByDescending(x => x.CreatedAt)
+                    .ThenByDescending(x => x.Id)
+                    .Skip(1))
+                .ToList();
+
+            var keys = latest.Select(x => x.EntityKey).ToList();
+            var existingByKey = await LoadExistingEntitiesAsync(keys, ct);
+
+            // Safety guard: never mass-deactivate FVN data because an HRM snapshot
+            // is incomplete. Only HRM-owned rows may be deactivated automatically.
+            var deleteItems = latest.Where(x => x.Action == HrmChangeAction.Delete).ToList();
+            if (deleteItems.Count > 0)
+            {
+                var activeCount = await Uow.Repository<TEntity>().Query()
+                    .CountAsync(x => EF.Property<bool?>(x, "IsActive") == true, ct);
+
+                if (deleteItems.Count * 2 > Math.Max(activeCount, 1))
+                {
+                    foreach (var staging in deleteItems)
+                    {
+                        staging.IsProcessed = true;
+                        staging.ErrorMessage = $"Delete guard: từ chối {deleteItems.Count} delete trên {activeCount} bản ghi active (>50%).";
+                    }
+
+                    result.Errors.Add($"Delete guard chặn {deleteItems.Count} bản ghi của {EntityType}: snapshot HRM có thể không đầy đủ.");
+                    latest = latest.Where(x => x.Action != HrmChangeAction.Delete).ToList();
+                }
+            }
+
+            var batchContext = new HrmSyncBatchContext<TEntity>();
+            await using var transaction = await Uow.BeginTransactionAsync(ct);
+
+            try
+            {
+                foreach (var staging in latest)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    try
+                    {
+                        existingByKey.TryGetValue(staging.EntityKey, out var entity);
+
+                        switch (staging.Action)
+                        {
+                            case HrmChangeAction.Delete:
+                                if (entity == null)
+                                    break;
+
+                                var source = entity.GetType().GetProperty("LastModifiedSource")?.GetValue(entity) as string;
+                                if (!string.Equals(source, SyncSourceTags.Hrm, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    staging.ErrorMessage = "Delete skipped: target record is not owned by HRM sync.";
+                                    result.Unchanged++;
+                                    break;
+                                }
+
+                                if (ApplyDelete(entity))
+                                {
+                                    result.Deactivated++;
+                                    batchContext.Deleted.Add(entity);
+                                }
+                                break;
+
+                            case HrmChangeAction.Insert:
+                            case HrmChangeAction.Update:
+                                if (entity == null)
+                                {
+                                    var newEntity = MapToNewEntity(staging);
+                                    await Uow.Repository<TEntity>().AddAsync(newEntity, ct);
+                                    result.Added++;
+                                    batchContext.Added.Add(newEntity);
+                                }
+                                else
+                                {
+                                    if (ApplyUpdate(entity, staging))
+                                    {
+                                        result.Updated++;
+                                        batchContext.Updated.Add(entity);
+                                    }
+                                    else
+                                    {
+                                        result.Unchanged++;
+                                    }
+                                }
+                                break;
+                        }
+
+                        staging.IsProcessed = true;
+                        if (entity != null)
+                            batchContext.Processed.Add(entity);
+                    }
+                    catch (Exception ex)
+                    {
+                        staging.ErrorMessage = ex.Message;
+                        result.Errors.Add($"{staging.EntityKey}: {ex.Message}");
+                    }
+                }
+
+                foreach (var raw in superseded)
+                {
+                    raw.IsProcessed = true;
+                    raw.ErrorMessage = "Superseded by newer change";
+                }
+
+                // IMPORTANT: persist and commit Employee/Position/Department/etc. FIRST.
+                // Security provisioning must not prolong this transaction.
+                await Uow.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+
+            // From here on, no HRM batch transaction is held. User/Approver provisioning
+            // can still query the committed data and write its own short SaveChanges transaction.
+            //
+            // The main batch is already committed (staging rows are IsProcessed=true), so a
+            // failure here must NOT be swallowed silently nor lost: surface it as a job error.
+            // HrmSyncService's self-heal check then reconciles the missing User/Approver rows.
+            try
+            {
+                await AfterBatchAsync(batchContext, ct);
+                await Uow.SaveChangesAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                batchContext.ProvisioningErrors.Add(
+                    $"[{EntityType}] AfterBatch thất bại sau khi batch chính đã commit: {ex.Message}. " +
+                    "Chạy 'Đồng bộ HRM User/Approver' hoặc đợi self-heal ở chu kỳ sau.");
+            }
+
+            if (batchContext.ProvisioningErrors.Count > 0)
+                result.Errors.AddRange(batchContext.ProvisioningErrors);
+
+            return result;
+        }
+    }
+}

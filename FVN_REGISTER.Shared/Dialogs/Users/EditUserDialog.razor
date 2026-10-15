@@ -1,0 +1,63 @@
+@using FVN_REGISTER.Contract.Dtos.Usermanagers
+@using FVN_REGISTER.Shared.Services.Security
+@using FVN_REGISTER.Core.Constants
+@inject ISecurityClientService SecurityService
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Edit" Class="mr-2" />
+            @Language.T("user.suaQuyenTaiKhoan")
+        </MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <MudSelect T="int" @bind-Value="Request.PermissionCode"
+                   Label="@Language.T("user.quyen")"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense">
+            <MudSelectItem Value="2">@Language.T("user.administrator")</MudSelectItem>
+            <MudSelectItem Value="4">@Language.T("nav.approvers")</MudSelectItem>
+            <MudSelectItem Value="5">@Language.T("common.user2")</MudSelectItem>
+        </MudSelect>
+        <MudTextField @bind-Value="Request.DeptCode"
+                      Label='@Language.T("common.departmentCode")'
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Class="mt-3" />
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Text">@Language.T("common.cancel")</MudButton>
+        <MudButton OnClick="Submit"
+                   Variant="Variant.Filled"
+                   Color="Color.Primary">
+            @Language.T("user.luuThayDoi")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public UpdateUserRequest Request { get; set; } = new();
+
+    private async Task Submit()
+    {
+        // Equipment access is governed through Admin > Security > Feature operator assignment.
+        // Remove legacy per-user grants for Equipment.View / Equipment.Import when this account is saved.
+        var functions = await SecurityService.GetFunctionsAsync();
+        var legacyEquipmentFunctionIds = functions.IsSuccess && functions.Data is not null
+            ? functions.Data
+                .Where(x => x.FunctionCode is SecurityFunctionCodes.EquipmentView or SecurityFunctionCodes.EquipmentImport)
+                .Select(x => x.IdFunction)
+                .ToHashSet()
+            : new HashSet<int>();
+
+        var ids = Request.FunctionIds?.Distinct().ToList() ?? new List<int>();
+        ids.RemoveAll(legacyEquipmentFunctionIds.Contains);
+        Request.FunctionIds = ids;
+        MudDialog.Close(DialogResult.Ok(Request));
+    }
+    private void Cancel() => MudDialog.Cancel();
+}

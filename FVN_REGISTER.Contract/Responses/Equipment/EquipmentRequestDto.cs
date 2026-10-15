@@ -1,0 +1,41 @@
+using FVN_REGISTER.Core.Enums;
+
+namespace FVN_REGISTER.Contract.Dtos.Equipment;
+
+public sealed class EquipmentRequestDto
+{
+    public int Id { get; set; }
+    public EquipmentRequestKind RequestKind { get; set; }
+    public ApprovalStatus RequestStatus { get; set; }
+    public int? AssetId { get; set; }
+    public string EmployeeCode { get; set; } = string.Empty;
+    public string? ResponsibleEmployeeCode { get; set; }
+    public string? EmployeeName { get; set; }
+    public int DeptCode { get; set; }
+    public string EquipmentName { get; set; } = string.Empty;
+    public string? AssetCode { get; set; }
+    public decimal PurchasePrice { get; set; }
+    public DateTime? PurchaseDate { get; set; }
+    public DateTime? ExpectedDepreciationDate { get; set; }
+    public DateTime? RepairDate { get; set; }
+    public string? RepairContent { get; set; }
+    public decimal? RepairCost { get; set; }
+    public string QrToken { get; set; } = string.Empty;
+    public string QrUrl { get; set; } = string.Empty;
+    public string SelectedApproverCode { get; set; } = string.Empty;
+    public int? RepairResponsibleDeptCode { get; set; }
+    public string? RepairAssigneeEmployeeCode { get; set; }
+    public string? RepairFeedback { get; set; }
+    public DateTime? RepairCompletedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public string? Specification { get; set; }
+    public string? SerialNumber { get; set; }
+    public string? Location { get; set; }
+    public string? Note { get; set; }
+    /// <summary>Schema-driven (custom) field values of the draft, as a JSON object.</summary>
+    public string? CustomDataJson { get; set; }
+    /// <summary>Snapshot of the official asset when the change draft was created (AssetChange only).</summary>
+    public string? AssetBeforeSnapshotJson { get; set; }
+    /// <summary>Proposed asset values after approval (AssetChange only).</summary>
+    public string? AssetAfterSnapshotJson { get; set; }
+}
