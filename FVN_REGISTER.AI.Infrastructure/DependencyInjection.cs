@@ -67,6 +67,8 @@ public static class DependencyInjection
   services.AddScoped<IRagAnswerService,RagAnswerService>();
   services.AddScoped<IKnowledgeIndexingService,KnowledgeIndexingService>();
   services.TryAddScoped<IAuthorizedKnowledgeAccessProvider,UnconfiguredAuthorizedKnowledgeAccessProvider>();
+  services.TryAddScoped<IAuthorizedDocumentReviewProvider,UnconfiguredDocumentReviewProvider>();
+  services.TryAddScoped<IAuthorizedSchemaManagementProvider,UnconfiguredSchemaManagementProvider>();
   services.AddScoped<IFeedbackService,FeedbackService>();
   services.AddScoped<IFeedbackEvaluationService,FeedbackEvaluationService>();
   services.AddScoped<IIngestionQueue,FVN_REGISTER.AI.Infrastructure.Providers.SqlIngestionQueue>();
