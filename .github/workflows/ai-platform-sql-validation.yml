@@ -6,6 +6,7 @@ on:
     paths:
       - "SQL/AI/**"
       - "FVN_REGISTER.AI.Infrastructure/Persistence/**"
+      - "FVN_REGISTER.AI.Infrastructure/Services/**"
       - "scripts/apply-ai-migrations.sh"
       - ".github/workflows/ai-platform-sql-validation.yml"
   pull_request:
@@ -138,6 +139,25 @@ jobs:
           replay=$(grep -h -c 'REPLAY' /tmp/nonce-*.txt | awk -F: '{s+=$NF} END{print s+0}')
           test "$accepted" -eq 1
           test "$replay" -eq 11
+
+
+      - name: Guard tenant predicates in RAG retrieval and SQL procedures
+        run: |
+          set -euo pipefail
+          grep -Fq 'k.TenantCode = {tenantCode}' FVN_REGISTER.AI.Infrastructure/Services/SqlVectorKnowledgeStore.cs
+          grep -Fq 'r.TenantCode = {tenantCode} AND r.DocumentId = k.DocumentId' FVN_REGISTER.AI.Infrastructure/Services/SqlVectorKnowledgeStore.cs
+          docker exec fvn-ai-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${SA_PASSWORD}" -C -b -d FVN_AI -Q "
+          IF EXISTS (
+            SELECT 1
+            FROM sys.procedures p
+            JOIN sys.schemas s ON s.schema_id=p.schema_id
+            JOIN sys.sql_modules m ON m.object_id=p.object_id
+            WHERE s.name=N'ai'
+              AND (m.definition LIKE N'%AiDocuments%' OR m.definition LIKE N'%AiExtractions%' OR m.definition LIKE N'%AiReviews%' OR m.definition LIKE N'%AiKnowledgeChunks%' OR m.definition LIKE N'%AiFeedback%' OR m.definition LIKE N'%AiHRCases%')
+              AND m.definition NOT LIKE N'%TenantCode%'
+              AND p.name NOT IN(N'usp_ClaimAiIngestionJob',N'usp_RecoverExpiredAiIngestionLeases',N'usp_RenewAiIngestionLease',N'usp_CompleteAiIngestionJob',N'usp_FailAiIngestionJob')
+          ) THROW 52020, 'Tenant-sensitive AI stored procedure lacks an explicit TenantCode predicate; add a reviewed queue-scheduler exception only if intentional.', 1;
+          "
 
       - name: Tenant-scoped duplicate-key smoke test
         env:
