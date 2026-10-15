@@ -28,6 +28,7 @@ FVN_REGISTER là nền tảng đăng ký nghiệp vụ nhân sự và phê duy�
 - **Cổng tài liệu AI:** [AI Platform Documentation Index](docs/AI_PLATFORM_DOCUMENTATION_INDEX.md)
 - [Kiến trúc tổng thể FVN AI](docs/AI_PLATFORM_ARCHITECTURE.md)
 - [Trạng thái triển khai Phase 1–6](docs/AI_PLATFORM_PHASES_STATUS.md)
+- [Vận hành AI Platform: cấu hình, migration, backup/restore, metric và chi phí](docs/AI_PLATFORM_OPERATIONS.md)
 - [Thiết kế HR Policy Assistant — hỏi đáp quy định nhân sự](docs/AI_HR_POLICY_ASSISTANT.md)
 - [Thiết kế triển khai HR Case Assistant — bằng chứng, dữ liệu chính thức và HR duyệt](docs/AI_HR_CASE_ASSISTANT_IMPLEMENTATION.md)
 - [Pilot AI phân tích bằng chứng và đối soát HR](docs/AI_HR_RECONCILIATION_PILOT.md)
