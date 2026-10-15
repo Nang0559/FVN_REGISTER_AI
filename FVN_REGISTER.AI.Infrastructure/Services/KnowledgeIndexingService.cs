@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FVN_REGISTER.AI.Infrastructure.Services;
 
-/// <summary>Human-controlled publication boundary for RAG. Publication is tenant/ACL scoped and idempotent per document chunk ordinal.</summary>
+/// <summary>Human-controlled publication boundary for RAG. Embeddings are prepared before the database publication transaction so a provider failure cannot leave an otherwise published document with its previous chunks disabled.</summary>
 public sealed class KnowledgeIndexingService(
     AiPlatformDbContext db,
     IOriginalDocumentStore documents,
@@ -23,41 +23,90 @@ public sealed class KnowledgeIndexingService(
         ArgumentNullException.ThrowIfNull(accessScopes);
         if (accessScopes.Count is < 1 or > 50 || accessScopes.Any(x => string.IsNullOrWhiteSpace(x) || x.Length > 128))
             throw new ArgumentException("At least one valid access scope is required.", nameof(accessScopes));
-        var document = await db.Documents.AsNoTracking().SingleOrDefaultAsync(x => x.Id == documentId && x.TenantCode == tenantCode && x.Status == "Approved", cancellationToken)
+
+        var document = await db.Documents.AsNoTracking().SingleOrDefaultAsync(
+            x => x.Id == documentId && x.TenantCode == tenantCode && x.Status == "Approved", cancellationToken)
             ?? throw new KeyNotFoundException("Approved document was not found for this tenant.");
-        var review = await db.Reviews.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reviewId && x.DocumentId == documentId && x.TenantCode == tenantCode && (x.Decision == "Approved" || x.Decision == "Corrected"), cancellationToken)
+        var review = await db.Reviews.AsNoTracking().SingleOrDefaultAsync(
+            x => x.Id == reviewId && x.DocumentId == documentId && x.TenantCode == tenantCode &&
+                 (x.Decision == "Approved" || x.Decision == "Corrected"), cancellationToken)
             ?? throw new UnauthorizedAccessException("A matching human-approved review is required before publication.");
+
         await using var original = await documents.OpenReadAsync(document.StorageKey, cancellationToken);
         var text = await textExtractor.ExtractTextAsync(original, document.MediaType, cancellationToken);
         if (string.IsNullOrWhiteSpace(text)) throw new InvalidDataException("KNOWLEDGE_DOCUMENT_HAS_NO_TEXT");
         if (text.Length > 2_000_000) throw new InvalidDataException("KNOWLEDGE_DOCUMENT_TEXT_LIMIT_EXCEEDED");
         var pieces = SplitIntoChunks(text, 8000);
         if (pieces.Count is < 1 or > 1000) throw new InvalidDataException("KNOWLEDGE_CHUNK_COUNT_OUT_OF_RANGE");
+
+        // Generate all embeddings before mutating publication state. If the provider fails,
+        // the current published version remains active and searchable.
         var scopeJson = JsonSerializer.Serialize(accessScopes.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
-        var existing = await db.KnowledgeChunks.Where(x => x.TenantCode == tenantCode && x.DocumentId == documentId).ToDictionaryAsync(x => x.ChunkOrdinal, cancellationToken);
-        foreach (var item in existing.Values) item.IsActive = false;
-        await db.SaveChangesAsync(cancellationToken);
         var chunks = new List<KnowledgeChunk>(pieces.Count);
         var vectors = new List<EmbeddingVector>(pieces.Count);
         for (var index = 0; index < pieces.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var piece = pieces[index];
-            var id = existing.TryGetValue(index, out var old) ? old.Id : StableChunkId(documentId, reviewId, index, piece.Text);
-            var metadata = new Dictionary<string, string> { ["reviewId"] = review.Id.ToString(), ["chunkOrdinal"] = index.ToString(), ["pageNumber"] = piece.PageNumber?.ToString() ?? "", ["sectionPath"] = piece.SectionPath ?? "", ["accessScopes"] = scopeJson };
+            var id = StableChunkId(documentId, reviewId, index, piece.Text);
+            var metadata = new Dictionary<string, string>
+            {
+                ["reviewId"] = review.Id.ToString(),
+                ["chunkOrdinal"] = index.ToString(),
+                ["pageNumber"] = piece.PageNumber?.ToString() ?? "",
+                ["sectionPath"] = piece.SectionPath ?? "",
+                ["accessScopes"] = scopeJson
+            };
             chunks.Add(new KnowledgeChunk(id.ToString(), documentId.ToString(), piece.Text, metadata));
             vectors.Add(await embeddings.GenerateAsync(piece.Text, cancellationToken));
         }
-        await vectorStore.UpsertAsync(tenantCode, chunks, vectors, cancellationToken);
-        return chunks.Count;
+
+        await using var transaction = db.Database.IsInMemory()
+            ? null
+            : await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            // Lock/read the current rows inside the same transaction that changes publication state.
+            // The unique (TenantCode, DocumentId, ChunkOrdinal) constraint remains the final race guard.
+            var existing = await db.KnowledgeChunks
+                .Where(x => x.TenantCode == tenantCode && x.DocumentId == documentId)
+                .ToDictionaryAsync(x => x.ChunkOrdinal, cancellationToken);
+
+            foreach (var item in existing.Values) item.IsActive = false;
+            await db.SaveChangesAsync(cancellationToken);
+
+            await vectorStore.UpsertAsync(tenantCode, chunks, vectors, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+            return chunks.Count;
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     public async Task UnpublishDocumentAsync(string tenantCode, Guid documentId, CancellationToken cancellationToken = default)
     {
         tenantCode = Required(tenantCode, 64);
-        var rows = await db.KnowledgeChunks.Where(x => x.TenantCode == tenantCode && x.DocumentId == documentId && x.IsActive).ToListAsync(cancellationToken);
-        foreach (var row in rows) row.IsActive = false;
-        await db.SaveChangesAsync(cancellationToken);
+        await using var transaction = db.Database.IsInMemory()
+            ? null
+            : await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            var rows = await db.KnowledgeChunks
+                .Where(x => x.TenantCode == tenantCode && x.DocumentId == documentId && x.IsActive)
+                .ToListAsync(cancellationToken);
+            foreach (var row in rows) row.IsActive = false;
+            await db.SaveChangesAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     private static Guid StableChunkId(Guid documentId, Guid reviewId, int ordinal, string text)
