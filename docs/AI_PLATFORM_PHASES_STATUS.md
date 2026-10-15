@@ -115,6 +115,11 @@ Run only against the dedicated FVN_AI database:
 4. `SQL/AI/004_HR_Reconciliation_Cases.sql`
 5. `SQL/AI/005_Universal_AI_Core.sql`
 6. `SQL/AI/006_Document_Schema_Routing.sql`
+7. `SQL/AI/007_UniversalDocumentLifecycle.sql`
+8. `SQL/AI/008_Phase1_3_Retention_Representation.sql`
+9. `SQL/AI/009_Phase4_5_Knowledge_ActiveLearning.sql`
+10. `SQL/AI/010_Extraction_Deduplication_And_MigrationLedger.sql`
+11. `SQL/AI/011_Persistent_Request_Replay_Protection.sql`
 
 Do not run AI migrations against the FVN_REGISTER operational database.
 
@@ -124,6 +129,8 @@ Do not run AI migrations against the FVN_REGISTER operational database.
 - `AIPlatform:DefaultProvider=Ollama`, `Endpoint`, `Model` and `EmbeddingModel` configure Ollama chat and embedding capabilities in both API and Worker.
 - `AIPlatform:Ocr:TesseractExecutable`, `PdfToPpmExecutable`, `Languages`, `Dpi` and `TimeoutSeconds` configure local OCR in both API and Worker.
 - AI API key and HMAC signing key must be stored in a secret manager/environment variables, not committed.
+- Migration 011 stores request nonces in SQL so replay detection works across API replicas. Apply it before deploying the API update.
+- `AIPlatform:RequireContentBoundSignatures=true` binds the HMAC to path + query and SHA-256 of the raw body. Enable only after the trusted FVN_REGISTER signer uses the matching canonical format; it defaults to `false` for compatibility.
 - RAG scopes must be supplied by a trusted FVN_REGISTER authorization adapter, never directly from client input.
 
 ## Validation status
