@@ -43,7 +43,7 @@ Confirm exact configuration binding against the deployed `AIPlatformOptions` bef
 
 For an empty dedicated database, apply `SQL/AI/001_...` through `SQL/AI/012_...` in numeric order. Do not run these migrations against the FVN_REGISTER operational database.
 
-- Migration 012 moves the knowledge-chunk ordinal unique index into a new forward migration. Historical migrations 003 and 005 must not be edited in released environments; the repository now leaves that index to 012 so new and existing databases converge.
+- Migration 012 is a forward convergence guard for the knowledge-chunk ordinal unique index. Migration 003 does not carry the added index block; historical migration 005 retains its pre-existing guarded index for clean installs. Migration 012 ensures older installations converge even when that index is absent, and fails if duplicates exist.
 - Migration 010 introduced the ledger. Migration 012 adds `MigrationFileName` and `Sha256Checksum`. A NULL checksum means the file was applied before checksum tracking or its exact source could not be verified; do not label it checksum-verified.
 - Use `scripts/apply-ai-migrations.sh` for deployments. It checks known checksums before applying and registers checksum metadata where it can safely verify the file. Run it once for deployment; CI invokes it twice to exercise repeatability.
 - Back up the database and verify restore before production migration. Take a schema/data snapshot or tested full backup, record current migration rows, and rehearse on a restored copy.
