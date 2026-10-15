@@ -78,4 +78,6 @@ jobs:
           IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiModelReleases') AND name=N'UX_AiModelReleases_OneActive' AND is_unique=1 AND has_filter=1) THROW 52001, 'One-active filtered unique index is missing.', 1;
           IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiExtractions') AND name=N'UX_AiExtractions_Document_SchemaVersion' AND is_unique=1 AND has_filter=1) THROW 52002, 'Extraction uniqueness index is missing.', 1;
           IF NOT EXISTS (SELECT 1 FROM ai.AiSchemaMigrations WHERE MigrationId=N'010_Extraction_Deduplication_And_MigrationLedger') THROW 52003, 'Migration 010 ledger entry is missing.', 1;
+          IF OBJECT_ID(N'ai.AiRequestNonces', N'U') IS NULL THROW 52004, 'Persistent request nonce table is missing.', 1;
+          IF NOT EXISTS (SELECT 1 FROM ai.AiSchemaMigrations WHERE MigrationId=N'011_Persistent_Request_Replay_Protection') THROW 52005, 'Migration 011 ledger entry is missing.', 1;
           "
