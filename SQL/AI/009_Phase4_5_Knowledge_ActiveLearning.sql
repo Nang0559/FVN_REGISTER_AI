@@ -1,3 +1,7 @@
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
 /* FVN_REGISTER AI Platform - Phase 4-5 knowledge/active-learning migration. Apply after 008. Safe to execute repeatedly. */
 IF OBJECT_ID(N'ai.AiGoldenDatasetCases', N'U') IS NULL
 BEGIN
