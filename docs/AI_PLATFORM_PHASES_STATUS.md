@@ -25,12 +25,12 @@ This document is the single status reference for the agreed roadmap. A phase is 
 - File signature checks, expanded ZIP limits, upload size limits, SHA-256 duplicate detection scoped by (Tenant, SHA-256, Module, Schema) after migration 006; identical bytes can be ingested separately for different module/schema workflows.
 - Quarantine-first lifecycle, malware scanning adapter and fail-closed unknown verdict.
 - SQL queue, leased workers, retry/dead-letter and expired lease recovery.
-- Tenant/actor signed gateway context and replay protection.
+- Tenant/actor signed gateway context, SQL-backed cross-replica nonce replay protection (migration 011), and opt-in query/body-bound HMAC signatures.
 
 ### Remaining
 - Tesseract/Poppler OCR adapter is implemented for PNG/JPEG and scanned PDF; production still requires installing/configuring Tesseract language packs and Poppler on API/Worker hosts. Additional office formats and connector-based sources remain open.
 - Configurable content limits by media type, retention/deletion policies and storage encryption/backup verification.
-- Cross-replica nonce persistence and shared storage/queue operations.
+- Shared storage/queue operations and production verification of SQL-backed replay protection (migration 011).
 - End-to-end tests for corrupt files, ZIP bombs, malicious files, duplicate races, interrupted uploads and lease recovery.
 
 ## Phase 2 — AI Document Understanding
