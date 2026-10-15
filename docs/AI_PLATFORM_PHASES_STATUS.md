@@ -1,6 +1,6 @@
 # FVN_REGISTER AI Center — Implementation Status
 
-Branch: `master`  
+Branch: `feature/ai-platform-phase1-6` (status describes this feature branch; merge target remains `master`)  
 Target: .NET 9 / SQL Server  
 Roadmap: **5 AI Core phases + Phase 6 FVN_REGISTER applications**.
 
@@ -12,7 +12,7 @@ This document is the single status reference for the agreed roadmap. A phase is 
 |---|---|---|---|
 | 1 | Universal Data Ingestion | In progress | OCR inputs, broader formats/connectors, end-to-end security and failure tests |
 | 2 | AI Document Understanding | In progress | OCR/layout, table understanding, robust classification, schema extraction pipeline and evaluation |
-| 3 | Data Extraction & Validation | In progress | Schema administration/API, pipeline orchestration, persisted validation results, review workflow and module contracts |
+| 3 | Data Extraction & Validation | In progress | Review queue integration and end-to-end verification of persisted validation results, published-schema routing, and module contracts |
 | 4 | RAG & Knowledge Base | In progress | Publication governance API, chunking/evaluation, RAG answer generation, citation validation, ACL integration and UI |
 | 5 | Active Learning | In progress | Golden sets, field-level evaluation, feedback-to-dataset pipeline, controlled model/prompt rollout and rollback |
 | 6 | FVN_REGISTER AI Applications | Pilot only | Re-integrate HR and build reusable registration/data-entry/reporting applications after Core gates pass |
@@ -22,7 +22,7 @@ This document is the single status reference for the agreed roadmap. A phase is 
 ### Implemented foundations
 - Separate AI Core projects, dedicated FVN_AI database and original document storage.
 - PDF, XLSX, DOCX, PNG, JPEG, CSV and TXT upload validation; Office ZIP structures are inspected with expanded-size limits and image/PDF signatures are checked.
-- File signature checks, expanded ZIP limits, upload size limits, SHA-256 and tenant duplicate detection.
+- File signature checks, expanded ZIP limits, upload size limits, SHA-256 duplicate detection scoped by (Tenant, SHA-256, Module, Schema) after migration 006; identical bytes can be ingested separately for different module/schema workflows.
 - Quarantine-first lifecycle, malware scanning adapter and fail-closed unknown verdict.
 - SQL queue, leased workers, retry/dead-letter and expired lease recovery.
 - Tenant/actor signed gateway context and replay protection.
@@ -46,7 +46,7 @@ This document is the single status reference for the agreed roadmap. A phase is 
 - Layout-aware extraction for tables, forms, merged cells, headers/footers and multi-column documents.
 - Classification taxonomy management and confidence calibration.
 - Robust JSON/schema-constrained model output, prompt versioning and language-specific golden corpus.
-- Extraction pipeline must load a published schema and invoke structured extraction + validation end to end.
+- The worker looks up a published schema when ModuleCode/SchemaCode are supplied and persists validation summary/provenance; end-to-end coverage and failure-path verification remain open.
 
 ## Phase 3 — Data Extraction & Validation
 
@@ -69,7 +69,7 @@ This document is the single status reference for the agreed roadmap. A phase is 
 ### Implemented foundations
 - Knowledge chunk SQL table and EF mapping.
 - Ollama embedding adapter.
-- SQL-backed cosine vector search with tenant filtering and access-scope filtering before content is returned to the RAG caller.
+- SQL-backed cosine vector search with tenant filtering and access-scope filtering before content is returned to the RAG caller. Current implementation bounds candidate chunks before cosine scoring; large-corpus recall remains a known limitation pending database-side vector indexing or a retrieval strategy that does not silently omit older chunks.
 - Explicit publication service: only human-approved extraction reviews can be indexed; upload alone does not publish knowledge.
 - Chunk metadata includes document, review, page/section, ordinal and access scopes.
 - Unpublish operation deactivates indexed chunks.
