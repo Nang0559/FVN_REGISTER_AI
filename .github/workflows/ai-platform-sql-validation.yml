@@ -142,7 +142,7 @@ jobs:
           test "$replay" -eq 11
 
 
-      - name: Guard tenant predicates in RAG retrieval and SQL procedures
+      - name: Guard tenant filters in RAG retrieval and tenant references in SQL procedures
         env:
           SA_PASSWORD: "FvnAi_CI_Strong!Pass2026"
         run: |
@@ -159,7 +159,7 @@ jobs:
               AND (m.definition LIKE N'%AiDocuments%' OR m.definition LIKE N'%AiExtractions%' OR m.definition LIKE N'%AiReviews%' OR m.definition LIKE N'%AiKnowledgeChunks%' OR m.definition LIKE N'%AiFeedback%' OR m.definition LIKE N'%AiHRCases%')
               AND m.definition NOT LIKE N'%TenantCode%'
               AND p.name NOT IN(N'usp_ClaimAiIngestionJob',N'usp_RecoverExpiredAiIngestionLeases',N'usp_RenewAiIngestionLease',N'usp_CompleteAiIngestionJob',N'usp_FailAiIngestionJob')
-          ) THROW 52020, 'Tenant-sensitive AI stored procedure lacks an explicit TenantCode predicate; add a reviewed queue-scheduler exception only if intentional.', 1;
+          ) THROW 52020, 'Tenant-sensitive AI stored procedure does not reference TenantCode; add a reviewed queue-scheduler exception only if intentional.', 1;
           "
 
       - name: Tenant-scoped duplicate-key smoke test
