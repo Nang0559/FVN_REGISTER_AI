@@ -1,6 +1,6 @@
 # FVN_REGISTER AI Center — Documentation Index
 
-This index describes the reusable AI Core roadmap on branch `master`.
+This index describes the reusable AI Core roadmap. The implementation status document tracks the current feature branch and its merge target.
 
 | Document | Purpose |
 |---|---|
