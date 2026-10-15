@@ -2,12 +2,14 @@ using FVN_REGISTER.AI.Application.Abstractions;
 using FVN_REGISTER.AI.Application.Configuration;
 using FVN_REGISTER.AI.Infrastructure;
 using FVN_REGISTER.AI.Infrastructure.Persistence;
+using FVN_REGISTER.AI.Worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddFvnAiInfrastructure(builder.Configuration);
 builder.Services.AddHostedService<IngestionWorker>();
+builder.Services.AddHostedService<RetentionWorker>();
 await builder.Build().RunAsync();
 
 internal sealed class IngestionWorker(
