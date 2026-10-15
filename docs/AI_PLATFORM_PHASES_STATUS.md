@@ -96,6 +96,7 @@ This document is the single status reference for the agreed roadmap. A phase is 
 - Golden datasets with human-verified labels and field-level metrics (precision, recall, exact match, confidence calibration).
 - Feedback triage and conversion of corrections into reviewed training/evaluation examples.
 - Regression evaluation before model, prompt, parser or schema releases.
+- Implement and configure the real FVN_REGISTER authorization adapter for Phase 5 administration; the current safe default is fail-closed and is not a production adapter.
 - Model registry lifecycle, approval, staged rollout, rollback, drift and cost monitoring.
 - Data governance: PII minimization, retention, anonymization and explicit training eligibility.
 
