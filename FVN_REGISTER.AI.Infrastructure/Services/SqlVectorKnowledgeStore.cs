@@ -12,7 +12,7 @@ namespace FVN_REGISTER.AI.Infrastructure.Services;
 /// SQL-backed vector store for moderate corpora. Tenant and ACL filtering happens before
 /// any candidate text is returned to the RAG orchestration layer.
 /// </summary>
-public sealed class SqlVectorKnowledgeStore(AiPlatformDbContext db) : IVectorKnowledgeStore
+public sealed class SqlVectorKnowledgeStore(AiPlatformDbContext db, ILogger<SqlVectorKnowledgeStore> logger) : IVectorKnowledgeStore
 {
     private const int MaximumCandidates = 5000;
 
@@ -105,6 +105,11 @@ public sealed class SqlVectorKnowledgeStore(AiPlatformDbContext db) : IVectorKno
             .OrderByDescending(x => x.CreatedAtUtc)
             .Take(MaximumCandidates)
             .ToListAsync(cancellationToken);
+
+        if (rows.Count == MaximumCandidates)
+        {
+            logger.LogWarning("Vector search candidate cap reached ({CandidateLimit}) for tenant {TenantCode}; older or lower-ranked chunks may be omitted. Consider database-side vector indexing or a narrower retrieval scope.", MaximumCandidates, tenantCode);
+        }
 
         var allowed = new HashSet<string>(allowedScopes.Where(x => !string.IsNullOrWhiteSpace(x)), StringComparer.OrdinalIgnoreCase);
         var results = new List<KnowledgeSearchCandidate>();
