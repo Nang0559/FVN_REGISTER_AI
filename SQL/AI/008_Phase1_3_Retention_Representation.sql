@@ -21,8 +21,3 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiDocuments_Retention' 
         ON ai.AiDocuments(Status, RetentionUntilUtc, ContentPurgedAtUtc)
         INCLUDE (TenantCode, StorageKey);
 GO
-
-IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_AiDocuments_ContentPurge' AND parent_object_id=OBJECT_ID(N'ai.AiDocuments'))
-    ALTER TABLE ai.AiDocuments ADD CONSTRAINT CK_AiDocuments_ContentPurge
-        CHECK ((Status <> N'Archived') OR ContentPurgedAtUtc IS NOT NULL);
-GO
