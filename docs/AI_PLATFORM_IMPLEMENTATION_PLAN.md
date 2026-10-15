@@ -72,6 +72,7 @@ Each application supplies schema, business rules, official data adapters and per
 - Separate FVN_AI database and deployment from FVN_REGISTER business database.
 - FVN_REGISTER remains identity/RBAC/system of record; AI cannot write operational tables.
 - Signed backend tenant/actor context; no trust in browser-supplied identity or ACL.
+- Trusted FVN_REGISTER authorization adapters for knowledge ACL, document reviewer rights and schema administration; fail closed when an adapter is missing.
 - Audit, privacy, retention, observability, cost limits and provider outage isolation.
 - Tests for tenant isolation, ACL isolation, malicious files, prompt injection, provenance, concurrency and failure recovery.
 
