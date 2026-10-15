@@ -10,11 +10,11 @@ This document is the single status reference for the agreed roadmap. A phase is 
 
 | Phase | Scope | Current status | Remaining exit criteria |
 |---|---|---|---|
-| 1 | Universal Data Ingestion | In progress | OCR inputs, broader formats/connectors, end-to-end security and failure tests |
-| 2 | AI Document Understanding | In progress | OCR/layout, table understanding, robust classification, schema extraction pipeline and evaluation |
-| 3 | Data Extraction & Validation | In progress | Review queue integration and end-to-end verification of persisted validation results, published-schema routing, and module contracts |
-| 4 | RAG & Knowledge Base | In progress | Publication governance API, chunking/evaluation, RAG answer generation, citation validation, ACL integration and UI |
-| 5 | Active Learning | In progress | Golden sets, field-level evaluation, feedback-to-dataset pipeline, controlled model/prompt rollout and rollback |
+| 1 | Universal Data Ingestion | Foundation / partial | OCR inputs, broader formats/connectors, end-to-end security and failure tests |
+| 2 | AI Document Understanding | Foundation / partial | OCR/layout, table understanding, robust classification, schema extraction pipeline and evaluation |
+| 3 | Data Extraction & Validation | Partial — core persistence/worker flow incomplete | Review queue integration and end-to-end verification of persisted validation results, published-schema routing, and module contracts |
+| 4 | RAG & Knowledge Base | Partial — policy lifecycle incomplete | Publication governance API, chunking/evaluation, RAG answer generation, citation validation, ACL integration and UI |
+| 5 | Active Learning | Partial — authorization adapter incomplete | Golden sets, field-level evaluation, feedback-to-dataset pipeline, controlled model/prompt rollout and rollback |
 | 6 | FVN_REGISTER AI Applications | Pilot only | Re-integrate HR and build reusable registration/data-entry/reporting applications after Core gates pass |
 
 ## Phase 1 — Universal Data Ingestion
@@ -107,7 +107,7 @@ After Phase 1–5 exit gates pass, application adapters can consume shared inges
 
 ## SQL migration order
 
-Run only against the dedicated FVN_AI database:
+For an empty dedicated FVN_AI database, run migrations 001 through 012 in this one sequence. Run only against the dedicated FVN_AI database:
 
 1. `SQL/AI/001_CreateAiIngestion.sql`
 2. `SQL/AI/002_ReliableIngestionQueue.sql`
@@ -120,6 +120,7 @@ Run only against the dedicated FVN_AI database:
 9. `SQL/AI/009_Phase4_5_Knowledge_ActiveLearning.sql`
 10. `SQL/AI/010_Extraction_Deduplication_And_MigrationLedger.sql`
 11. `SQL/AI/011_Persistent_Request_Replay_Protection.sql`
+12. `SQL/AI/012_KnowledgeChunkConstraint_And_ChecksumLedger.sql`
 
 Do not run AI migrations against the FVN_REGISTER operational database.
 
