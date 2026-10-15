@@ -14,7 +14,6 @@ namespace FVN_REGISTER.AI.Infrastructure.Services;
 /// </summary>
 public sealed class SqlVectorKnowledgeStore(AiPlatformDbContext db, ILogger<SqlVectorKnowledgeStore> logger) : IVectorKnowledgeStore
 {
-    private const int MaximumCandidates = 5000;
 
     public async Task UpsertAsync(string tenantCode, IReadOnlyCollection<KnowledgeChunk> chunks,
         IReadOnlyCollection<EmbeddingVector> vectors, CancellationToken cancellationToken = default)
@@ -103,13 +102,9 @@ public sealed class SqlVectorKnowledgeStore(AiPlatformDbContext db, ILogger<SqlV
                   )")
             .AsNoTracking()
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Take(MaximumCandidates)
             .ToListAsync(cancellationToken);
 
-        if (rows.Count == MaximumCandidates)
-        {
-            logger.LogWarning("Vector search candidate cap reached ({CandidateLimit}) for tenant {TenantCode}; older or lower-ranked chunks may be omitted. Consider database-side vector indexing or a narrower retrieval scope.", MaximumCandidates, tenantCode);
-        }
+        logger.LogDebug("Vector search scanned {CandidateCount} ACL-filtered chunks for tenant {TenantCode}.", rows.Count, tenantCode);
 
         var allowed = new HashSet<string>(allowedScopes.Where(x => !string.IsNullOrWhiteSpace(x)), StringComparer.OrdinalIgnoreCase);
         var results = new List<KnowledgeSearchCandidate>();
