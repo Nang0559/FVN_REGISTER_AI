@@ -42,7 +42,7 @@ jobs:
           done
           docker exec fvn-ai-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -b -Q "IF DB_ID(N'FVN_AI') IS NULL CREATE DATABASE FVN_AI;"
 
-      - name: Apply migrations 001-010 twice
+      - name: Apply migrations 001-011 twice
         env:
           SA_PASSWORD: "FvnAi_CI_Strong!Pass2026"
         run: |
@@ -60,6 +60,7 @@ jobs:
             008_Phase1_3_Retention_Representation.sql
             009_Phase4_5_Knowledge_ActiveLearning.sql
             010_Extraction_Deduplication_And_MigrationLedger.sql
+            011_Persistent_Request_Replay_Protection.sql
           )
           for pass in 1 2; do
             echo "Migration pass $pass"
