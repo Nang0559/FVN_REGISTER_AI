@@ -34,7 +34,7 @@ public sealed class AiPlatformDbContext(DbContextOptions<AiPlatformDbContext> op
   e.Property(x=>x.TenantCode).HasMaxLength(64).IsRequired(); e.Property(x=>x.DocumentType).HasMaxLength(128).IsRequired();
   e.Property(x=>x.SchemaCode).HasMaxLength(128); e.Property(x=>x.ValidationStatus).HasMaxLength(16).IsRequired();
   e.Property(x=>x.CandidateJson).IsRequired(); e.Property(x=>x.ParserVersion).HasMaxLength(64).IsRequired();
-  e.Property(x=>x.ProvenanceJson); e.Property(x=>x.ValidationSummaryJson);
+  e.Property(x=>x.ProvenanceJson); e.Property(x=>x.ValidationSummaryJson); e.Property(x=>x.RepresentationJson);
   e.HasIndex(x=>new{x.TenantCode,x.DocumentId,x.CreatedAtUtc});
   e.HasIndex(x=>new{x.TenantCode,x.SchemaCode,x.SchemaVersion,x.CreatedAtUtc});
   var vi=b.Entity<AiValidationIssueRecord>(); vi.ToTable("AiValidationIssues","ai"); vi.HasKey(x=>x.Id);
@@ -81,12 +81,12 @@ public sealed class AiDocumentRecord
 {
  public Guid Id{get;set;} public string TenantCode{get;set;}=string.Empty; public string FileName{get;set;}=string.Empty; public string Extension{get;set;}=string.Empty; public string MediaType{get;set;}=string.Empty; public long Length{get;set;}
  public string Sha256{get;set;}=string.Empty; public string StorageKey{get;set;}=string.Empty; public string UploadedBy{get;set;}=string.Empty; public string? ModuleCode{get;set;} public string? SchemaCode{get;set;}
- public string SourceType{get;set;}="Upload"; public string? SourceReference{get;set;} public DateTimeOffset? RetentionUntilUtc{get;set;}
+ public string SourceType{get;set;}="Upload"; public string? SourceReference{get;set;} public DateTimeOffset? RetentionUntilUtc{get;set;} public DateTimeOffset? ContentPurgedAtUtc{get;set;}
  public DateTimeOffset ReceivedAtUtc{get;set;} public string Status{get;set;}="Quarantined";
 }
 public sealed class AiIngestionJobRecord
 {
- public Guid Id{get;set;} public Guid DocumentId{get;set;} public string Status{get;set;}="Queued"; public int AttemptCount{get;set;} public DateTimeOffset CreatedAtUtc{get;set;} public DateTimeOffset? StartedAtUtc{get;set;} public string? LeaseOwner{get;set;} public DateTimeOffset? LeaseUntilUtc{get;set;} public DateTimeOffset? CompletedAtUtc{get;set;} public string? FailureCode{get;set;}
+ public Guid Id{get;set;} public Guid DocumentId{get;set;} public string Status{get;set;}="Queued"; public int AttemptCount{get;set;} public DateTimeOffset CreatedAtUtc{get;set;} public DateTimeOffset? StartedAtUtc{get;set;} public DateTimeOffset? LeaseOwnerUntilUtc{get;set;} public DateTimeOffset? LeaseUntilUtc{get;set;} public DateTimeOffset? CompletedAtUtc{get;set;} public string? FailureCode{get;set;} public string? LeaseOwner{get;set;}
 }
 public sealed class AiHRCaseRecord
 {
@@ -111,5 +111,5 @@ public sealed class AiExtractionSchemaVersionRecord
 }
 public sealed class AiValidationIssueRecord
 {
- public Guid Id{get;set;} public Guid ExtractionId{get;set;} public string? FieldPath{get;set;} public string RuleCode{get;set;}=""; public string Severity{get;set;}="Error"; public string Message{get;set;}=""; public DateTimeOffset CreatedAtUtc{get;set;}
+ public Guid Id{get;set;} public Guid ExtractionId{get;set;} public string? FieldPath{get;set;} public string RuleCode{get;set;}=""; public string Severity{get;set;}="Error"; public string Message{get;set;}=""; public DateTimeOffset CreatedAtUtc{get;set;} 
 }
