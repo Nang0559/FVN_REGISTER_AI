@@ -58,7 +58,7 @@ for file in "${migrations[@]}"; do
   id="${file%.sql}"
   checksum="$(sha256sum "$MIGRATIONS_DIR/$file" | awk '{print toupper($1)}')"
   num="${id:0:3}"
-  if [[ "$fresh" == "1" || "$num" -ge 010 ]]; then
+  if [[ "$fresh" == "1" || "$num" == "010" || "$num" == "011" || "$num" == "012" ]]; then
     checksumSql="'$checksum'"
   else
     # Existing DBs may have applied older file contents; record as an unverified baseline.
