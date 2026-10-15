@@ -51,6 +51,11 @@ IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiKnowled
 GO
 
 
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiKnowledgeChunks') AND name=N'UX_AiKnowledgeChunks_Tenant_Document_Ordinal')
+ CREATE UNIQUE INDEX UX_AiKnowledgeChunks_Tenant_Document_Ordinal
+ ON ai.AiKnowledgeChunks(TenantCode,DocumentId,ChunkOrdinal);
+GO
+
 IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiFeedback') AND name=N'IX_AiFeedback_Tenant_Created_Versions')
  CREATE INDEX IX_AiFeedback_Tenant_Created_Versions
  ON ai.AiFeedback(TenantCode,CreatedAtUtc)
