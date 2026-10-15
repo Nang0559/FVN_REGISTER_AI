@@ -5,6 +5,7 @@ using FVN_REGISTER.AI.Application.Contracts;
 using FVN_REGISTER.AI.Infrastructure.Extraction;
 using FVN_REGISTER.AI.Infrastructure.Persistence;
 using FVN_REGISTER.AI.Infrastructure.Services;
+using FVN_REGISTER.AI.Infrastructure.Validation;
 using Microsoft.EntityFrameworkCore;
 namespace FVN_REGISTER.AI.Tests;
 public sealed class Phase1To3ExitGateTests
