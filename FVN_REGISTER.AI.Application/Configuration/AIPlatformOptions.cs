@@ -15,6 +15,7 @@ public sealed class AIPlatformOptions
  public string ConnectionStringName{get;set;}="FvnAi";
  public string? ApiKey{get;set;}
  public string? ContextSigningKey{get;set;}
+ public bool RequireContentBoundSignatures{get;set;}
  public int QueuePollSeconds{get;set;}=15;
  public int RetentionPollMinutes{get;set;}=30;
  public int ConnectorPollMinutes{get;set;}=5;
