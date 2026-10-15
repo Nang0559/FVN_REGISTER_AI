@@ -57,7 +57,7 @@ This document is the single status reference for the agreed roadmap. A phase is 
 - Human review and correction persistence; evidence and tenant ownership checks.
 
 ### Remaining
-- Authorized schema administration endpoints and UI.
+- API mutations for schema drafts/publication and document review now require dedicated trusted FVN_REGISTER authorization adapters. Safe defaults fail closed; the production gateway adapters and administration/review UI are still not configured/implemented.
 - Bind the ingestion worker to a published module schema, structured extraction and validation.
 - Persist validation runs/issues with schema version, model/prompt version and evidence provenance.
 - Mapping profiles for source columns/cells to schema paths; support multiple rows and repeated records.
