@@ -42,7 +42,7 @@ var group=app.MapGroup("/api/ai/v1").AddEndpointFilter(async (ctx,next)=>{
  var nonce=request.Headers["X-AI-Nonce"].ToString();
  var signature=request.Headers["X-AI-Signature"].ToString();
  var signingKey=app.Configuration[$"{AIPlatformOptions.SectionName}:ContextSigningKey"];
- var bindContent = app.Configuration.GetValue<bool>($"{AIPlatformOptions.SectionName}:RequireContentBoundSignatures");
+ var bindContent = settings.RequireContentBoundSignatures;
  var bodySha256 = string.Empty;
  if (bindContent)
  {
