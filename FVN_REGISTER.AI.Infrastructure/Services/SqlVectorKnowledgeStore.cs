@@ -94,6 +94,7 @@ public sealed class SqlVectorKnowledgeStore(AiPlatformDbContext db, ILogger<SqlV
             .FromSqlInterpolated($@"SELECT k.* FROM ai.AiKnowledgeChunks AS k
                 INNER JOIN ai.AiReviews AS r ON r.Id = k.ReviewId
                 WHERE k.TenantCode = {tenantCode} AND k.IsActive = 1
+                  AND r.TenantCode = {tenantCode} AND r.DocumentId = k.DocumentId
                   AND (r.Decision = N'Approved' OR r.Decision = N'Corrected')
                   AND k.EmbeddingJson IS NOT NULL
                   AND EXISTS (
