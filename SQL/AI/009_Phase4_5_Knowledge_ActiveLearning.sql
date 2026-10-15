@@ -22,10 +22,8 @@ BEGIN
     );
 END
 GO
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiGoldenDatasetCases_TenantDataset' AND object_id=OBJECT_ID(N'ai.AiGoldenDatasetCases'))
-    CREATE INDEX IX_AiGoldenDatasetCases_TenantDataset ON ai.AiGoldenDatasetCases(TenantCode, DatasetCode, IsActive);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiGoldenDatasetCases_TenantDataset' AND object_id=OBJECT_ID(N'ai.AiGoldenDatasetCases')) CREATE INDEX IX_AiGoldenDatasetCases_TenantDataset ON ai.AiGoldenDatasetCases(TenantCode, DatasetCode, IsActive);
 GO
-
 IF OBJECT_ID(N'ai.AiGoldenDatasetEvaluations', N'U') IS NULL
 BEGIN
     CREATE TABLE ai.AiGoldenDatasetEvaluations
@@ -41,10 +39,8 @@ BEGIN
     );
 END
 GO
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiGoldenDatasetEvaluations_Case' AND object_id=OBJECT_ID(N'ai.AiGoldenDatasetEvaluations'))
-    CREATE INDEX IX_AiGoldenDatasetEvaluations_Case ON ai.AiGoldenDatasetEvaluations(CaseId, EvaluatedAtUtc DESC);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiGoldenDatasetEvaluations_Case' AND object_id=OBJECT_ID(N'ai.AiGoldenDatasetEvaluations')) CREATE INDEX IX_AiGoldenDatasetEvaluations_Case ON ai.AiGoldenDatasetEvaluations(CaseId, EvaluatedAtUtc DESC);
 GO
-
 IF OBJECT_ID(N'ai.AiModelReleases', N'U') IS NULL
 BEGIN
     CREATE TABLE ai.AiModelReleases
@@ -57,6 +53,7 @@ BEGIN
         PromptVersion NVARCHAR(128) NOT NULL,
         SchemaCode NVARCHAR(128) NULL,
         SchemaVersion INT NULL,
+        GoldenDatasetCode NVARCHAR(128) NOT NULL,
         Status NVARCHAR(16) NOT NULL,
         MinimumAcceptanceRate FLOAT NOT NULL,
         CreatedAtUtc DATETIMEOFFSET(7) NOT NULL,
@@ -70,10 +67,9 @@ BEGIN
     );
 END
 GO
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiModelReleases_Active' AND object_id=OBJECT_ID(N'ai.AiModelReleases'))
-    CREATE INDEX IX_AiModelReleases_Active ON ai.AiModelReleases(TenantCode, Status, PromotedAtUtc DESC);
+IF COL_LENGTH(N'ai.AiModelReleases', N'GoldenDatasetCode') IS NULL ALTER TABLE ai.AiModelReleases ADD GoldenDatasetCode NVARCHAR(128) NULL;
 GO
-
-IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_AiKnowledgeChunks_AccessScopeJson' AND parent_object_id=OBJECT_ID(N'ai.AiKnowledgeChunks'))
-    ALTER TABLE ai.AiKnowledgeChunks ADD CONSTRAINT CK_AiKnowledgeChunks_AccessScopeJson CHECK(ISJSON(AccessScopeJson)=1);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiModelReleases_Active' AND object_id=OBJECT_ID(N'ai.AiModelReleases')) CREATE INDEX IX_AiModelReleases_Active ON ai.AiModelReleases(TenantCode, Status, PromotedAtUtc DESC);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_AiKnowledgeChunks_AccessScopeJson' AND parent_object_id=OBJECT_ID(N'ai.AiKnowledgeChunks')) ALTER TABLE ai.AiKnowledgeChunks ADD CONSTRAINT CK_AiKnowledgeChunks_AccessScopeJson CHECK(ISJSON(AccessScopeJson)=1);
 GO
