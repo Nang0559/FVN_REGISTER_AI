@@ -1,6 +1,6 @@
 # FVN_REGISTER AI Platform — Phase Status
 
-> **Status convention:** `Implementation-complete / exit gate pending` means the code foundation for the phase is present, but the phase is **not** considered production-complete until its end-to-end authorization, integration, deployment and operational tests pass.
+> **Status convention:** `Foundation / partial` means some contracts and infrastructure exist, but core end-to-end behavior is not yet implemented or verified. No Phase 1–5 phase is production-complete.
 
 ## Current branch
 
@@ -12,11 +12,11 @@
 
 | Phase | Status | What is implemented | Exit-gate / production work remaining |
 |---|---|---|---|
-| 1 — Universal Data Ingestion | Implementation-complete / exit gate pending | Tenant-scoped ingestion, SHA-256 duplicate protection scoped by (Tenant, SHA-256, Module, Schema), quarantine, source metadata, folder connector, leased queue, retention metadata/purge | ZIP-bomb/file-corruption tests, verify SQL-backed nonce replay protection (migration 011), multi-replica lease behavior, encrypted/backup storage verification, SQL/runtime verification |
-| 2 — Document Understanding | Implementation-complete / exit gate pending | Provider-neutral representation, page/paragraph/table/row/cell/region locators, confidence and OCR provenance | Provider/OCR end-to-end tests, malformed document coverage, operational verification |
-| 3 — Extraction & Validation | Implementation-complete / exit gate pending | Versioned schema registry, mappings, normalization, deterministic validation, evidence/provenance, review contracts | Review queue integration and tests; confirm persisted validation issues/provenance and published-schema routing with end-to-end tests |
-| 4 — RAG & Knowledge Base | Implementation-complete / exit gate pending | Human-approved publication boundary, bounded chunks, embeddings, tenant/ACL/approved-review retrieval, hybrid ranking, citation validation | Knowledge policy lifecycle (effective/expiry/replacement), admin UI, RAG UI, retrieval-quality evaluation, prompt-injection red-team tests |
-| 5 — Active Learning & Controlled Release | Implementation-complete / exit gate pending | Golden datasets, evaluation summary, human feedback gate, candidate/active/retired/rollback lifecycle, one-active SQL constraint | Field-level precision/recall/calibration, drift/cost monitoring, PII/training-data governance, real authorization adapter, production evaluation workflow |
+| 1 — Universal Data Ingestion | Foundation / partial — exit gate pending | Tenant-scoped ingestion, SHA-256 duplicate protection scoped by (Tenant, SHA-256, Module, Schema), quarantine, source metadata, folder connector, leased queue, retention metadata/purge | ZIP-bomb/file-corruption tests, verify SQL-backed nonce replay protection (migration 011), multi-replica lease behavior, encrypted/backup storage verification, SQL/runtime verification |
+| 2 — Document Understanding | Foundation / partial — exit gate pending | Provider-neutral representation, page/paragraph/table/row/cell/region locators, confidence and OCR provenance | Provider/OCR end-to-end tests, malformed document coverage, operational verification |
+| 3 — Extraction & Validation | Foundation / partial — exit gate pending | Versioned schema registry, mappings, normalization, deterministic validation, evidence/provenance, review contracts | Review queue integration and tests; confirm persisted validation issues/provenance and published-schema routing with end-to-end tests |
+| 4 — RAG & Knowledge Base | Foundation / partial — exit gate pending | Human-approved publication boundary, bounded chunks, embeddings, tenant/ACL/approved-review retrieval, hybrid ranking, citation validation | Knowledge policy lifecycle (effective/expiry/replacement), admin UI, RAG UI, retrieval-quality evaluation, prompt-injection red-team tests |
+| 5 — Active Learning & Controlled Release | Foundation / partial — exit gate pending | Golden datasets, evaluation summary, human feedback gate, candidate/active/retired/rollback lifecycle, one-active SQL constraint | Field-level precision/recall/calibration, drift/cost monitoring, PII/training-data governance, real authorization adapter, production evaluation workflow |
 | 6 — FVN_REGISTER AI Applications | Pilot foundation only / integration pending | HR Assistant adapter boundary, authorization-aware HR fact contract, deterministic OT/attendance/leave comparison, human-review workspace | Real FVN_REGISTER gateway/authorization adapter, production HR data integration, audit/operational verification, UI/API end-to-end pilot |
 
 ## Authorization boundary
@@ -33,9 +33,7 @@ Therefore these capabilities are **implemented as secured application boundaries
 
 ## SQL migration order
 
-The Phase 1–6 branch does **not** start at `007` on an empty database. The dedicated AI database must already have migrations `001` through `006` applied.
-
-Apply all migrations in this exact order:
+For an empty dedicated `FVN_AI` database, run migrations `001` through `012` in this one sequence:
 
 1. `SQL/AI/001_CreateAiIngestion.sql`
 2. `SQL/AI/002_ReliableIngestionQueue.sql`
@@ -48,14 +46,15 @@ Apply all migrations in this exact order:
 9. `SQL/AI/009_Phase4_5_Knowledge_ActiveLearning.sql`
 10. `SQL/AI/010_Extraction_Deduplication_And_MigrationLedger.sql`
 11. `SQL/AI/011_Persistent_Request_Replay_Protection.sql`
+12. `SQL/AI/012_KnowledgeChunkConstraint_And_ChecksumLedger.sql`
 
 `007` requires the structures created by `001–006`; `008` explicitly requires `007`; `009` explicitly requires the knowledge structures created before it. `010` requires `001–009`, adds a unique filtered index for versioned extractions, and initializes a migration ledger for subsequent tracking.
 
-All migrations are intended to be repeatable (`IF NOT EXISTS` / `COL_LENGTH` / guarded index or procedure creation). `003` now also enforces tenant/document/chunk-ordinal uniqueness for knowledge chunks and stops with a clear error if pre-existing duplicate ordinals must be cleaned first. Runtime verification against a real SQL Server is still required before treating repeatability as an operational guarantee.
+All migrations are intended to be repeatable (`IF NOT EXISTS` / `COL_LENGTH` / guarded index or procedure creation). The knowledge-chunk ordinal unique index is introduced by migration `012`, not retrofitted into historical migrations. Existing duplicate ordinals cause `012` to stop with a clear error; reconcile them before retrying. Migration `012` extends the ledger with filename and SHA-256 checksum fields. A NULL checksum means the older migration is an unverified legacy baseline. Runtime verification against a real SQL Server is still required before treating repeatability as an operational guarantee.
 
 ## Exit-gate test coverage
 
-Current automated coverage includes:
+Automated coverage is incomplete until the SQL Server workflow exercises fresh-database migrations, repeat application, duplicate-ordinal failure, concurrent lease claims and tenant-scoped smoke tests. Unit tests alone do not prove SQL locking semantics.
 
 - Phase 1–3 representation, mapping, validation and retention idempotency tests.
 - Phase 4 RAG citation/authorization behavior tests.
