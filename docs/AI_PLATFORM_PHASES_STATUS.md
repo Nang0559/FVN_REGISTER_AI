@@ -128,7 +128,7 @@ Do not run AI migrations against the FVN_REGISTER operational database.
 
 ## Validation status
 
-GitHub Actions workflow `.github/workflows/ai-platform-validation.yml` targets `master` and runs restore/build/tests. No workflow runs were returned during the current audit; do not claim a passing build until a run completes successfully. Local FCC environment integration, SQL migrations, OCR runtime and security tests are not implied by a green compile.
+GitHub Actions workflow `.github/workflows/ai-platform-validation.yml` targets `master` and runs restore/build/tests. A run has been triggered for the current changes and is still pending; do not claim a passing build until restore, build and tests complete successfully. Local FCC environment integration, SQL migrations, OCR runtime and security tests are not implied by a green compile.
 
 ## Architectural invariants
 
