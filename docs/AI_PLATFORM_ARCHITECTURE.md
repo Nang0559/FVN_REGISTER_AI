@@ -32,7 +32,7 @@ FVN_REGISTER remains authoritative for employee identity, permissions, requests,
 - A model-generated candidate, answer or recommendation is not an approved business decision.
 - Business changes require an explicit user/HR action, then fresh authorization and domain validation inside FVN_REGISTER.
 - No arbitrary model-generated SQL, shell command or script execution.
-- Retrieval permissions must be resolved by a trusted FVN_REGISTER authorization adapter before content enters a model prompt. The API must never accept ACL scopes from request-body input; until the adapter is configured, knowledge search/publication must fail closed.
+- Retrieval permissions must be resolved by a trusted FVN_REGISTER authorization adapter before content enters a model prompt. The API must never accept ACL scopes from request-body input. Document review and schema mutation also require trusted authorization adapters. Until these adapters are configured, the corresponding operations fail closed.
 - Only HR-approved and effective policy revisions are eligible for normal policy answers.
 - Unsupported, stale, conflicting or insufficient evidence results in clarification or escalation, not a plausible guess.
 
@@ -82,7 +82,7 @@ flowchart LR
 | `FVN_REGISTER.AI.Worker` | Durable asynchronous ingestion and indexing pipelines |
 | FVN_REGISTER | Identity, RBAC, authoritative HR facts, reports, approvals and user experience |
 
-Integration uses versioned HTTP contracts and service-to-service authentication. Tenant, actor and authorization context must be signed by the trusted FVN_REGISTER backend after it has checked the current user's permissions. Browser-supplied actor IDs are never trusted.
+Integration uses versioned HTTP contracts and service-to-service authentication. Tenant, actor and authorization context must be signed by the trusted FVN_REGISTER backend after it has checked the current user's permissions. Browser-supplied actor IDs are never trusted. Reviewer rights, schema-administration rights and knowledge ACL scopes are resolved through explicit trusted authorization adapters; missing adapters fail closed.
 
 ## 5. Deployment baseline
 
