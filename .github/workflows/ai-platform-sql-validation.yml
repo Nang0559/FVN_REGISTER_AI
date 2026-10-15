@@ -14,6 +14,7 @@ on:
     paths:
       - "SQL/AI/**"
       - "FVN_REGISTER.AI.Infrastructure/Persistence/**"
+      - "FVN_REGISTER.AI.Infrastructure/Services/**"
       - "scripts/apply-ai-migrations.sh"
       - ".github/workflows/ai-platform-sql-validation.yml"
   workflow_dispatch:
@@ -142,6 +143,8 @@ jobs:
 
 
       - name: Guard tenant predicates in RAG retrieval and SQL procedures
+        env:
+          SA_PASSWORD: "FvnAi_CI_Strong!Pass2026"
         run: |
           set -euo pipefail
           grep -Fq 'k.TenantCode = {tenantCode}' FVN_REGISTER.AI.Infrastructure/Services/SqlVectorKnowledgeStore.cs
