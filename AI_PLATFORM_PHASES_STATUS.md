@@ -12,7 +12,7 @@
 
 | Phase | Status | What is implemented | Exit-gate / production work remaining |
 |---|---|---|---|
-| 1 — Universal Data Ingestion | Implementation-complete / exit gate pending | Tenant-scoped ingestion, SHA-256 duplicate protection scoped by (Tenant, SHA-256, Module, Schema), quarantine, source metadata, folder connector, leased queue, retention metadata/purge | ZIP-bomb/file-corruption tests, multi-replica nonce/lease verification, encrypted/backup storage verification, SQL/runtime verification |
+| 1 — Universal Data Ingestion | Implementation-complete / exit gate pending | Tenant-scoped ingestion, SHA-256 duplicate protection scoped by (Tenant, SHA-256, Module, Schema), quarantine, source metadata, folder connector, leased queue, retention metadata/purge | ZIP-bomb/file-corruption tests, verify SQL-backed nonce replay protection (migration 011), multi-replica lease behavior, encrypted/backup storage verification, SQL/runtime verification |
 | 2 — Document Understanding | Implementation-complete / exit gate pending | Provider-neutral representation, page/paragraph/table/row/cell/region locators, confidence and OCR provenance | Provider/OCR end-to-end tests, malformed document coverage, operational verification |
 | 3 — Extraction & Validation | Implementation-complete / exit gate pending | Versioned schema registry, mappings, normalization, deterministic validation, evidence/provenance, review contracts | Review queue integration and tests; confirm persisted validation issues/provenance and published-schema routing with end-to-end tests |
 | 4 — RAG & Knowledge Base | Implementation-complete / exit gate pending | Human-approved publication boundary, bounded chunks, embeddings, tenant/ACL/approved-review retrieval, hybrid ranking, citation validation | Knowledge policy lifecycle (effective/expiry/replacement), admin UI, RAG UI, retrieval-quality evaluation, prompt-injection red-team tests |
@@ -47,6 +47,7 @@ Apply all migrations in this exact order:
 8. `SQL/AI/008_Phase1_3_Retention_Representation.sql`
 9. `SQL/AI/009_Phase4_5_Knowledge_ActiveLearning.sql`
 10. `SQL/AI/010_Extraction_Deduplication_And_MigrationLedger.sql`
+11. `SQL/AI/011_Persistent_Request_Replay_Protection.sql`
 
 `007` requires the structures created by `001–006`; `008` explicitly requires `007`; `009` explicitly requires the knowledge structures created before it. `010` requires `001–009`, adds a unique filtered index for versioned extractions, and initializes a migration ledger for subsequent tracking.
 
