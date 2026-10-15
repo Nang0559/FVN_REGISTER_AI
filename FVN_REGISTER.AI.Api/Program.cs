@@ -91,18 +91,24 @@ group.MapGet("/documents/{id:guid}/extraction",async (Guid id,HttpRequest req,IS
 });
 group.MapPost("/reviews/{extractionId:guid}",async (Guid extractionId,ReviewRequest body,HttpRequest req,IServiceProvider services,CancellationToken ct)=>{
  var service=services.GetService<IDocumentReviewService>();
+ var authorization=services.GetService<IAuthorizedDocumentReviewProvider>();
  if(service is null) return Results.Problem("AI SQL connection is not configured.",statusCode:503);
+ if(authorization is null) return Results.Problem("Trusted document-review authorization is not configured.",statusCode:503);
  var tenant=req.Headers["X-Tenant-Code"].ToString().Trim();
  var actor=req.Headers["X-Actor-Id"].ToString().Trim();
  try
  {
+  await authorization.AuthorizeReviewAsync(tenant,actor,extractionId,ct);
   var receipt=await service.ReviewAsync(extractionId,tenant,actor,body.Decision,body.CorrectedPayloadJson,body.Comment,ct);
   return Results.Ok(receipt);
  }
  catch(KeyNotFoundException){return Results.NotFound();}
+ catch(UnauthorizedAccessException){return Results.Forbid();}
+ catch(InvalidOperationException ex) when(ex.Message=="DOCUMENT_REVIEW_AUTHORIZATION_NOT_CONFIGURED")
+ { return Results.Problem("Trusted FVN_REGISTER reviewer authorization adapter is not configured.",statusCode:503); }
  catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}
  catch(System.Text.Json.JsonException){return Results.BadRequest(new{error="Corrected payload must contain valid JSON."});}
-});
+ });
 group.MapPost("/feedback",async (FeedbackRequest body,HttpRequest req,IServiceProvider services,CancellationToken ct)=>{
  var service=services.GetService<IFeedbackService>();
  if(service is null) return Results.Problem("AI SQL connection is not configured.",statusCode:503);
@@ -133,14 +139,20 @@ group.MapPost("/schemas/drafts", async (SchemaDraftRequest body, HttpRequest req
     IServiceProvider services, CancellationToken ct) =>
 {
     var registry = services.GetService<IExtractionSchemaRegistry>();
+    var authorization = services.GetService<IAuthorizedSchemaManagementProvider>();
     if (registry is null) return Results.Problem("Extraction schema registry is not configured.", statusCode: 503);
+    if (authorization is null) return Results.Problem("Trusted schema authorization is not configured.", statusCode: 503);
     var tenant = req.Headers["X-Tenant-Code"].ToString().Trim();
     var actor = req.Headers["X-Actor-Id"].ToString().Trim();
     try
     {
+        await authorization.AuthorizeDraftAsync(tenant, actor, body.ModuleCode, body.Schema.SchemaCode, ct);
         var version = await registry.CreateDraftVersionAsync(tenant, body.ModuleCode, body.Schema, actor, ct);
         return Results.Created($"/api/ai/v1/schemas/{body.ModuleCode}/{body.Schema.SchemaCode}", new { version });
     }
+    catch (UnauthorizedAccessException) { return Results.Forbid(); }
+    catch (InvalidOperationException ex) when (ex.Message == "SCHEMA_ADMIN_AUTHORIZATION_NOT_CONFIGURED")
+    { return Results.Problem("Trusted FVN_REGISTER schema-administration adapter is not configured.", statusCode: 503); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
@@ -148,15 +160,21 @@ group.MapPost("/schemas/{moduleCode}/{schemaCode}/{version:int}/publish", async 
     string schemaCode, int version, HttpRequest req, IServiceProvider services, CancellationToken ct) =>
 {
     var registry = services.GetService<IExtractionSchemaRegistry>();
+    var authorization = services.GetService<IAuthorizedSchemaManagementProvider>();
     if (registry is null) return Results.Problem("Extraction schema registry is not configured.", statusCode: 503);
+    if (authorization is null) return Results.Problem("Trusted schema authorization is not configured.", statusCode: 503);
     var tenant = req.Headers["X-Tenant-Code"].ToString().Trim();
     var actor = req.Headers["X-Actor-Id"].ToString().Trim();
     try
     {
+        await authorization.AuthorizePublishAsync(tenant, actor, moduleCode, schemaCode, version, ct);
         await registry.PublishVersionAsync(tenant, moduleCode, schemaCode, version, actor, ct);
         return Results.Ok(new { moduleCode, schemaCode, version, status = "Published" });
     }
     catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (UnauthorizedAccessException) { return Results.Forbid(); }
+    catch (InvalidOperationException ex) when (ex.Message == "SCHEMA_ADMIN_AUTHORIZATION_NOT_CONFIGURED")
+    { return Results.Problem("Trusted FVN_REGISTER schema-administration adapter is not configured.", statusCode: 503); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
 });
