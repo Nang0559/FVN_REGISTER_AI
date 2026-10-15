@@ -19,14 +19,17 @@ IF OBJECT_ID(N'ai.AiGoldenDatasetEvaluations', N'U') IS NULL
 BEGIN
     CREATE TABLE ai.AiGoldenDatasetEvaluations
     (
-        Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_AiGoldenDatasetEvaluations PRIMARY KEY,
-        CaseId UNIQUEIDENTIFIER NOT NULL, ReleaseId UNIQUEIDENTIFIER NULL, Passed BIT NOT NULL,
-        ActualJson NVARCHAR(MAX) NULL, FailureReason NVARCHAR(2000) NULL, EvaluatedAtUtc DATETIMEOFFSET(7) NOT NULL,
-        CONSTRAINT FK_AiGoldenDatasetEvaluations_Case FOREIGN KEY(CaseId) REFERENCES ai.AiGoldenDatasetCases(Id)
+        Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_AiGoldenDatasetEvaluations PRIMARY KEY, CaseId UNIQUEIDENTIFIER NOT NULL,
+        ReleaseId UNIQUEIDENTIFIER NULL, Passed BIT NOT NULL, ActualJson NVARCHAR(MAX) NULL, FailureReason NVARCHAR(2000) NULL,
+        EvaluatedAtUtc DATETIMEOFFSET(7) NOT NULL,
+        CONSTRAINT FK_AiGoldenDatasetEvaluations_Case FOREIGN KEY(CaseId) REFERENCES ai.AiGoldenDatasetCases(Id),
+        CONSTRAINT CK_AiGoldenDatasetEvaluations_ActualJson CHECK(ActualJson IS NULL OR ISJSON(ActualJson)=1)
     );
 END
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiGoldenDatasetEvaluations_Case' AND object_id=OBJECT_ID(N'ai.AiGoldenDatasetEvaluations')) CREATE INDEX IX_AiGoldenDatasetEvaluations_Case ON ai.AiGoldenDatasetEvaluations(CaseId, EvaluatedAtUtc DESC);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiGoldenDatasetEvaluations_Release' AND object_id=OBJECT_ID(N'ai.AiGoldenDatasetEvaluations')) CREATE INDEX IX_AiGoldenDatasetEvaluations_Release ON ai.AiGoldenDatasetEvaluations(ReleaseId, EvaluatedAtUtc DESC);
 GO
 IF OBJECT_ID(N'ai.AiModelReleases', N'U') IS NULL
 BEGIN
@@ -55,6 +58,9 @@ GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiModelReleases_Active' AND object_id=OBJECT_ID(N'ai.AiModelReleases')) CREATE INDEX IX_AiModelReleases_Active ON ai.AiModelReleases(TenantCode, Status, PromotedAtUtc DESC);
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_AiModelReleases_OneActive' AND object_id=OBJECT_ID(N'ai.AiModelReleases')) CREATE UNIQUE INDEX UX_AiModelReleases_OneActive ON ai.AiModelReleases(TenantCode) WHERE Status=N'Active';
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name=N'FK_AiGoldenDatasetEvaluations_Release' AND parent_object_id=OBJECT_ID(N'ai.AiGoldenDatasetEvaluations'))
+    ALTER TABLE ai.AiGoldenDatasetEvaluations ADD CONSTRAINT FK_AiGoldenDatasetEvaluations_Release FOREIGN KEY(ReleaseId) REFERENCES ai.AiModelReleases(Id);
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_AiKnowledgeChunks_AccessScopeJson' AND parent_object_id=OBJECT_ID(N'ai.AiKnowledgeChunks')) ALTER TABLE ai.AiKnowledgeChunks ADD CONSTRAINT CK_AiKnowledgeChunks_AccessScopeJson CHECK(ISJSON(AccessScopeJson)=1);
 GO
