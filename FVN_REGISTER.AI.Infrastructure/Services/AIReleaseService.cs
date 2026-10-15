@@ -2,6 +2,7 @@ using FVN_REGISTER.AI.Application.Abstractions;
 using FVN_REGISTER.AI.Application.Contracts;
 using FVN_REGISTER.AI.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace FVN_REGISTER.AI.Infrastructure.Services;
 
@@ -38,7 +39,7 @@ public sealed class AIReleaseService(AiPlatformDbContext db, IGoldenDatasetServi
     public async Task PromoteAsync(string tenantCode,string actorId,Guid releaseId,CancellationToken cancellationToken=default)
     {
         Require(tenantCode,64,nameof(tenantCode)); Require(actorId,128,nameof(actorId));
-        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await BeginProductionTransactionAsync(cancellationToken);
         var tenant=tenantCode.Trim();
         var release=await db.Set<AiModelReleaseRecord>().SingleOrDefaultAsync(x=>x.Id==releaseId&&x.TenantCode==tenant,cancellationToken)??throw new KeyNotFoundException("AI release was not found.");
         if(release.Status!="Candidate") throw new InvalidOperationException("RELEASE_NOT_CANDIDATE");
@@ -48,13 +49,13 @@ public sealed class AIReleaseService(AiPlatformDbContext db, IGoldenDatasetServi
         foreach(var old in active){old.Status="Retired";old.RetiredAtUtc=DateTimeOffset.UtcNow;}
         release.Status="Active";release.PromotedAtUtc=DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        if(transaction is not null) await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task RollbackAsync(string tenantCode,string actorId,Guid releaseId,CancellationToken cancellationToken=default)
     {
         Require(tenantCode,64,nameof(tenantCode)); Require(actorId,128,nameof(actorId));
-        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await BeginProductionTransactionAsync(cancellationToken);
         var tenant=tenantCode.Trim();
         var active=await db.Set<AiModelReleaseRecord>().SingleOrDefaultAsync(x=>x.Id==releaseId&&x.TenantCode==tenant,cancellationToken)??throw new KeyNotFoundException("AI release was not found.");
         if(active.Status!="Active") throw new InvalidOperationException("RELEASE_NOT_ACTIVE");
@@ -63,13 +64,19 @@ public sealed class AIReleaseService(AiPlatformDbContext db, IGoldenDatasetServi
         active.Status="RolledBack";active.RetiredAtUtc=DateTimeOffset.UtcNow;
         previous.Status="Active";previous.RetiredAtUtc=null;
         await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        if(transaction is not null) await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<AIRelease?> GetActiveAsync(string tenantCode,CancellationToken cancellationToken=default)
     {
         var record=await db.Set<AiModelReleaseRecord>().AsNoTracking().SingleOrDefaultAsync(x=>x.TenantCode==tenantCode.Trim()&&x.Status=="Active",cancellationToken);
         return record is null?null:ToContract(record);
+    }
+
+    private async Task<IDbContextTransaction?> BeginProductionTransactionAsync(CancellationToken cancellationToken)
+    {
+        if (db.Database.IsInMemory()) return null;
+        return await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
     }
 
     private static AIRelease ToContract(AiModelReleaseRecord x)=>new(x.Id,x.TenantCode,x.ReleaseCode,x.ModelProvider,x.ModelVersion,x.PromptVersion,x.SchemaCode,x.SchemaVersion,x.GoldenDatasetCode,x.Status,x.MinimumAcceptanceRate,x.CreatedAtUtc,x.PromotedAtUtc,x.RetiredAtUtc);
