@@ -113,3 +113,24 @@ public interface IAuthorizedKnowledgeAccessProvider
         string tenantCode, string actorId, Guid documentId,
         CancellationToken cancellationToken = default);
 }
+
+
+/// <summary>Checks reviewer authority in the trusted FVN_REGISTER authorization boundary.</summary>
+public interface IAuthorizedDocumentReviewProvider
+{
+    Task AuthorizeReviewAsync(
+        string tenantCode, string actorId, Guid extractionId,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>Checks schema administration rights in the trusted FVN_REGISTER authorization boundary.</summary>
+public interface IAuthorizedSchemaManagementProvider
+{
+    Task AuthorizeDraftAsync(
+        string tenantCode, string actorId, string moduleCode, string schemaCode,
+        CancellationToken cancellationToken = default);
+
+    Task AuthorizePublishAsync(
+        string tenantCode, string actorId, string moduleCode, string schemaCode, int version,
+        CancellationToken cancellationToken = default);
+}
