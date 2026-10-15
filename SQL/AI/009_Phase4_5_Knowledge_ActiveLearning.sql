@@ -69,6 +69,11 @@ END
 GO
 IF COL_LENGTH(N'ai.AiModelReleases', N'GoldenDatasetCode') IS NULL ALTER TABLE ai.AiModelReleases ADD GoldenDatasetCode NVARCHAR(128) NULL;
 GO
+IF EXISTS (SELECT 1 FROM ai.AiModelReleases WHERE GoldenDatasetCode IS NULL OR LTRIM(RTRIM(GoldenDatasetCode))='') UPDATE ai.AiModelReleases SET GoldenDatasetCode=ReleaseCode WHERE GoldenDatasetCode IS NULL OR LTRIM(RTRIM(GoldenDatasetCode))='';
+GO
+IF COL_LENGTH(N'ai.AiModelReleases', N'GoldenDatasetCode') IS NOT NULL
+    ALTER TABLE ai.AiModelReleases ALTER COLUMN GoldenDatasetCode NVARCHAR(128) NOT NULL;
+GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_AiModelReleases_Active' AND object_id=OBJECT_ID(N'ai.AiModelReleases')) CREATE INDEX IX_AiModelReleases_Active ON ai.AiModelReleases(TenantCode, Status, PromotedAtUtc DESC);
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_AiKnowledgeChunks_AccessScopeJson' AND parent_object_id=OBJECT_ID(N'ai.AiKnowledgeChunks')) ALTER TABLE ai.AiKnowledgeChunks ADD CONSTRAINT CK_AiKnowledgeChunks_AccessScopeJson CHECK(ISJSON(AccessScopeJson)=1);
