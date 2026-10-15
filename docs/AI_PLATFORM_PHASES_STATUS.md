@@ -107,7 +107,7 @@ After Phase 1–5 exit gates pass, application adapters can consume shared inges
 
 ## SQL migration order
 
-For an empty dedicated FVN_AI database, run migrations 001 through 012 in this one sequence. Run only against the dedicated FVN_AI database:
+For an empty dedicated FVN_AI database, run migrations 001 through 013 in this one sequence. Run only against the dedicated FVN_AI database:
 
 1. `SQL/AI/001_CreateAiIngestion.sql`
 2. `SQL/AI/002_ReliableIngestionQueue.sql`
@@ -121,6 +121,7 @@ For an empty dedicated FVN_AI database, run migrations 001 through 012 in this o
 10. `SQL/AI/010_Extraction_Deduplication_And_MigrationLedger.sql`
 11. `SQL/AI/011_Persistent_Request_Replay_Protection.sql`
 12. `SQL/AI/012_KnowledgeChunkConstraint_And_ChecksumLedger.sql`
+13. `SQL/AI/013_HRCaseTextColumnSizeRepair.sql`
 
 Do not run AI migrations against the FVN_REGISTER operational database.
 
