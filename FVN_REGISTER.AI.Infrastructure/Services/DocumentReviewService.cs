@@ -22,9 +22,11 @@ public sealed class DocumentReviewService(AiPlatformDbContext db) : IDocumentRev
             using var parsed = JsonDocument.Parse(correctedPayloadJson);
         }
 
-        var extraction = await db.Extractions.SingleOrDefaultAsync(
-            x => x.Id == extractionId && x.TenantCode == tenantCode, cancellationToken);
-        if (extraction is null) throw new KeyNotFoundException("Extraction was not found for this tenant.");
+        var extraction = await db.Extractions.SingleOrDefaultAsync(x => x.Id == extractionId && x.TenantCode == tenantCode, cancellationToken)
+            ?? throw new KeyNotFoundException("Extraction was not found for this tenant.");
+        var document = await db.Documents.SingleAsync(x => x.Id == extraction.DocumentId && x.TenantCode == tenantCode, cancellationToken);
+        if (document.Status is "Archived" or "Rejected")
+            throw new InvalidOperationException("DOCUMENT_NOT_REVIEWABLE");
 
         var now = DateTimeOffset.UtcNow;
         var review = new AiReviewRecord
@@ -35,22 +37,17 @@ public sealed class DocumentReviewService(AiPlatformDbContext db) : IDocumentRev
             CorrectedPayloadJson = decision == "Corrected" ? correctedPayloadJson : null,
             Comment = comment?.Trim(), ReviewedAtUtc = now
         };
-        var document = await db.Documents.SingleAsync(
-            x => x.Id == extraction.DocumentId && x.TenantCode == tenantCode, cancellationToken);
         document.Status = decision == "Rejected" ? "Rejected" : "Approved";
-        if (decision == "Corrected")
-            extraction.CandidateJson = correctedPayloadJson!;
+        if (decision == "Corrected") extraction.CandidateJson = correctedPayloadJson!;
         db.Reviews.Add(review);
         await db.SaveChangesAsync(cancellationToken);
         return new ReviewReceipt(review.Id, review.DocumentId, review.Decision, now);
     }
 
-    private static string Required(string value, int max, string name)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Trim().Length > max)
-            throw new ArgumentException($"Value must contain 1 to {max} characters.", name);
-        return value.Trim();
-    }
+    private static string Required(string value, int max, string name) =>
+        string.IsNullOrWhiteSpace(value) || value.Trim().Length > max
+            ? throw new ArgumentException($"Value must contain 1 to {max} characters.", name)
+            : value.Trim();
 }
 
 public sealed class AiExtractionRecord
@@ -64,6 +61,7 @@ public sealed class AiExtractionRecord
     public int? SchemaVersion { get; set; }
     public string ValidationStatus { get; set; } = "NotRun";
     public string CandidateJson { get; set; } = "{}";
+    public string? RepresentationJson { get; set; }
     public string? ValidationSummaryJson { get; set; }
     public string? ProvenanceJson { get; set; }
     public string ParserVersion { get; set; } = "";
