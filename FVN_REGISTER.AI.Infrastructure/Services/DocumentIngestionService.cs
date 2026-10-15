@@ -23,7 +23,12 @@ public sealed class DocumentIngestionService(AiPlatformDbContext db,IOriginalDoc
     return new(duplicate.Id,old?.Id??Guid.Empty,duplicate.FileName,duplicate.Length,duplicate.Sha256,duplicate.Status,true);
    }
    var job=Guid.NewGuid();var now=DateTimeOffset.UtcNow;
-   db.Documents.Add(new AiDocumentRecord{Id=id,TenantCode=tenant,FileName=valid.FileName,Extension=valid.Extension,MediaType=valid.MediaType,Length=stored.Length,Sha256=stored.Sha256,StorageKey=stored.StorageKey,UploadedBy=actor,ModuleCode=moduleCode,SchemaCode=schemaCode,ReceivedAtUtc=now,Status="Quarantined"});
+   db.Documents.Add(new AiDocumentRecord
+   {
+    Id=id,TenantCode=tenant,FileName=valid.FileName,Extension=valid.Extension,MediaType=valid.MediaType,Length=stored.Length,
+    Sha256=stored.Sha256,StorageKey=stored.StorageKey,UploadedBy=actor,ModuleCode=moduleCode,SchemaCode=schemaCode,
+    SourceType="Upload",SourceReference=valid.FileName,RetentionUntilUtc=null,ReceivedAtUtc=now,Status="Quarantined"
+   });
    db.IngestionJobs.Add(new AiIngestionJobRecord{Id=job,DocumentId=id,Status="Queued",CreatedAtUtc=now});
    await db.SaveChangesAsync(ct);return new(id,job,valid.FileName,stored.Length,stored.Sha256,"Quarantined",false);
   }
