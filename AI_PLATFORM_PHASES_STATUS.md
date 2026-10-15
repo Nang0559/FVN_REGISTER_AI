@@ -49,7 +49,7 @@ Apply all migrations in this exact order:
 
 `007` requires the structures created by `001–006`; `008` explicitly requires `007`; `009` explicitly requires the knowledge structures created before it.
 
-All migrations are intended to be repeatable (`IF NOT EXISTS` / `COL_LENGTH` / guarded index or procedure creation). Runtime verification against a real SQL Server is still required before treating repeatability as an operational guarantee.
+All migrations are intended to be repeatable (`IF NOT EXISTS` / `COL_LENGTH` / guarded index or procedure creation). `003` now also enforces tenant/document/chunk-ordinal uniqueness for knowledge chunks and stops with a clear error if pre-existing duplicate ordinals must be cleaned first. Runtime verification against a real SQL Server is still required before treating repeatability as an operational guarantee.
 
 ## Exit-gate test coverage
 
@@ -69,7 +69,7 @@ The validation workflow is configured for both:
 - `push` to `master`
 - `pull_request` targeting `master`
 
-The latest PR validation for head `156e61ab4a8ce9ff540438275ddf1afc0883cac0` did run on the feature branch, but it **failed during the solution build**, so there is currently no green CI result for PR #1. The AI test step was skipped because the build failed.
+Earlier PR runs were cancelled while Restore/Build was in progress, so those runs do **not** establish a code failure or a green CI result. The workflow has now been changed to `cancel-in-progress: false` so an in-flight PR validation is allowed to finish and produce a meaningful Restore → Build → AI Tests result.
 
 Local user verification that the solution builds successfully is useful, but it is not equivalent to a green CI run.
 
