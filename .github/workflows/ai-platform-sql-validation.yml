@@ -1,0 +1,80 @@
+name: AI SQL Server integration validation
+
+on:
+  push:
+    branches: [master, "feature/ai-platform-phase1-6"]
+    paths:
+      - "SQL/AI/**"
+      - "FVN_REGISTER.AI.Infrastructure/Persistence/**"
+      - ".github/workflows/ai-platform-sql-validation.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "SQL/AI/**"
+      - "FVN_REGISTER.AI.Infrastructure/Persistence/**"
+      - ".github/workflows/ai-platform-sql-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SQL Server 2022
+        env:
+          SA_PASSWORD: "FvnAi_CI_Strong!Pass2026"
+        run: |
+          docker run -d --name fvn-ai-sql \
+            -e ACCEPT_EULA=Y \
+            -e MSSQL_PID=Developer \
+            -e MSSQL_SA_PASSWORD="$SA_PASSWORD" \
+            -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+          for i in $(seq 1 60); do
+            if docker exec fvn-ai-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -Q "SELECT 1" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 5
+          done
+          docker exec fvn-ai-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -b -Q "IF DB_ID(N'FVN_AI') IS NULL CREATE DATABASE FVN_AI;"
+
+      - name: Apply migrations 001-010 twice
+        env:
+          SA_PASSWORD: "FvnAi_CI_Strong!Pass2026"
+        run: |
+          set -euo pipefail
+          docker cp SQL/AI fvn-ai-sql:/tmp/SQLAI
+          sqlcmd="/opt/mssql-tools18/bin/sqlcmd"
+          migrations=(
+            001_CreateAiIngestion.sql
+            002_ReliableIngestionQueue.sql
+            003_Review_Knowledge_Feedback.sql
+            004_HR_Reconciliation_Cases.sql
+            005_Universal_AI_Core.sql
+            006_Document_Schema_Routing.sql
+            007_UniversalDocumentLifecycle.sql
+            008_Phase1_3_Retention_Representation.sql
+            009_Phase4_5_Knowledge_ActiveLearning.sql
+            010_Extraction_Deduplication_And_MigrationLedger.sql
+          )
+          for pass in 1 2; do
+            echo "Migration pass $pass"
+            for file in "${migrations[@]}"; do
+              echo "Applying $file"
+              docker exec fvn-ai-sql "$sqlcmd" -S localhost -U sa -P "$SA_PASSWORD" -C -b -d FVN_AI -i "/tmp/SQLAI/$file"
+            done
+          done
+
+      - name: Verify critical constraints and migration ledger
+        env:
+          SA_PASSWORD: "FvnAi_CI_Strong!Pass2026"
+        run: |
+          docker exec fvn-ai-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -b -d FVN_AI -Q "
+          IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiModelReleases') AND name=N'UX_AiModelReleases_OneActive' AND is_unique=1 AND has_filter=1) THROW 52001, 'One-active filtered unique index is missing.', 1;
+          IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiExtractions') AND name=N'UX_AiExtractions_Document_SchemaVersion' AND is_unique=1 AND has_filter=1) THROW 52002, 'Extraction uniqueness index is missing.', 1;
+          IF NOT EXISTS (SELECT 1 FROM ai.AiSchemaMigrations WHERE MigrationId=N'010_Extraction_Deduplication_And_MigrationLedger') THROW 52003, 'Migration 010 ledger entry is missing.', 1;
+          "
