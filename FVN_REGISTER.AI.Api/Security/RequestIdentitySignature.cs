@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Text;
 
 namespace FVN_REGISTER.AI.Api.Security;
@@ -13,6 +14,7 @@ public static class RequestIdentitySignature
 {
     private static readonly ConcurrentDictionary<string, DateTimeOffset> UsedNonces = new(StringComparer.Ordinal);
     private static readonly TimeSpan AllowedClockSkew = TimeSpan.FromMinutes(5);
+    private static int _validationCount;
 
     public static bool TryValidate(
         string signingKey,
@@ -62,8 +64,13 @@ public static class RequestIdentitySignature
             return false;
 
         // Keep replay protection bounded and reject a nonce only after its signature is valid.
-        foreach (var item in UsedNonces)
-            if (item.Value < nowUtc) UsedNonces.TryRemove(item.Key, out _);
+        // Avoid enumerating the entire replay cache on every request. Cleanup is opportunistic;
+        // expired entries are removed in bounded-frequency batches.
+        if ((Interlocked.Increment(ref _validationCount) & 0xFF) == 0)
+        {
+            foreach (var item in UsedNonces)
+                if (item.Value < nowUtc) UsedNonces.TryRemove(item.Key, out _);
+        }
 
         var replayKey = tenantCode + ":" + nonce;
         if (!UsedNonces.TryAdd(replayKey, signedAt.Add(AllowedClockSkew)))
