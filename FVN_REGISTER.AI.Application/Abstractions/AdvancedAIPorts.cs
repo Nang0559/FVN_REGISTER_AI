@@ -94,3 +94,22 @@ public sealed record RagCitation(string ChunkId, string DocumentId, string FileN
     string Citation, double RelevanceScore);
 public sealed record RagAnswerResult(string Answer, string Status, IReadOnlyList<RagCitation> Citations,
     string? ModelProvider, string? ModelVersion);
+
+
+/// <summary>
+/// Resolves knowledge ACLs from the trusted FVN_REGISTER authorization boundary.
+/// Implementations must never derive permissions from request-body scope values.
+/// </summary>
+public interface IAuthorizedKnowledgeAccessProvider
+{
+    Task<IReadOnlyCollection<string>> GetSearchScopesAsync(
+        string tenantCode, string actorId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<string>> GetPublicationScopesAsync(
+        string tenantCode, string actorId, Guid documentId, Guid reviewId,
+        CancellationToken cancellationToken = default);
+
+    Task AuthorizeUnpublishAsync(
+        string tenantCode, string actorId, Guid documentId,
+        CancellationToken cancellationToken = default);
+}
