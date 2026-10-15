@@ -25,25 +25,11 @@ public static class DependencyInjection
   if(!string.IsNullOrWhiteSpace(connection)) services.AddDbContext<AiPlatformDbContext>(db=>db.UseSqlServer(connection,sql=>sql.EnableRetryOnFailure(3)));
   if(options.DefaultProvider.Equals("Ollama",StringComparison.OrdinalIgnoreCase))
   {
-   if(!Uri.TryCreate(options.Endpoint,UriKind.Absolute,out var modelEndpoint) ||
-      (modelEndpoint.Scheme!=Uri.UriSchemeHttp && modelEndpoint.Scheme!=Uri.UriSchemeHttps))
-    throw new InvalidOperationException("AIPlatform:Endpoint must be an absolute HTTP(S) URL when DefaultProvider is Ollama.");
-   services.AddHttpClient<IAIModelProvider,OllamaAIModelProvider>(client =>
-   {
-    client.BaseAddress=new Uri(options.Endpoint!.TrimEnd('/')+"/");
-    client.Timeout=TimeSpan.FromSeconds(120);
-   });
-   services.AddHttpClient<IEmbeddingGenerator,OllamaEmbeddingGenerator>(client =>
-   {
-    client.BaseAddress=new Uri(options.Endpoint!.TrimEnd('/')+"/");
-    client.Timeout=TimeSpan.FromSeconds(120);
-   });
+   if(!Uri.TryCreate(options.Endpoint,UriKind.Absolute,out var modelEndpoint) || (modelEndpoint.Scheme!=Uri.UriSchemeHttp && modelEndpoint.Scheme!=Uri.UriSchemeHttps)) throw new InvalidOperationException("AIPlatform:Endpoint must be an absolute HTTP(S) URL when DefaultProvider is Ollama.");
+   services.AddHttpClient<IAIModelProvider,OllamaAIModelProvider>(client=>{client.BaseAddress=new Uri(options.Endpoint!.TrimEnd('/')+"/");client.Timeout=TimeSpan.FromSeconds(120);});
+   services.AddHttpClient<IEmbeddingGenerator,OllamaEmbeddingGenerator>(client=>{client.BaseAddress=new Uri(options.Endpoint!.TrimEnd('/')+"/");client.Timeout=TimeSpan.FromSeconds(120);});
   }
-  else
-  {
-   services.TryAddSingleton<IAIModelProvider,UnconfiguredAIModelProvider>();
-   services.TryAddSingleton<IEmbeddingGenerator,UnconfiguredEmbeddingGenerator>();
-  }
+  else { services.TryAddSingleton<IAIModelProvider,UnconfiguredAIModelProvider>(); services.TryAddSingleton<IEmbeddingGenerator,UnconfiguredEmbeddingGenerator>(); }
   services.AddSingleton<IOriginalDocumentStore,FileSystemOriginalDocumentStore>();
   services.AddSingleton<IUploadContentValidator,UploadContentValidator>();
   services.AddSingleton<IOcrTextExtractor,TesseractOcrTextExtractor>();
@@ -51,13 +37,8 @@ public static class DependencyInjection
   services.AddScoped<IDocumentClassifier,ModelDocumentClassifier>();
   services.AddScoped<ISchemaDrivenDocumentExtractor,SchemaDrivenDocumentExtractor>();
   services.AddScoped<IDocumentRepresentationExtractor,DocumentRepresentationExtractor>();
-  services.TryAddSingleton<IMalwareScanner>(sp =>
-  {
-   var scannerOptions=sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MalwareScannerOptions>>().Value;
-   return scannerOptions.Provider.Equals("ClamAV",StringComparison.OrdinalIgnoreCase)
-    ? new ClamDMalwareScanner(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MalwareScannerOptions>>())
-    : new UnconfiguredMalwareScanner();
-  });
+  services.AddScoped<IExtractionFieldMappingService,ExtractionFieldMappingService>();
+  services.TryAddSingleton<IMalwareScanner>(sp=>{var scannerOptions=sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MalwareScannerOptions>>().Value;return scannerOptions.Provider.Equals("ClamAV",StringComparison.OrdinalIgnoreCase)?new ClamDMalwareScanner(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MalwareScannerOptions>>()):new UnconfiguredMalwareScanner();});
   services.AddScoped<IDocumentIngestionService,DocumentIngestionService>();
   services.AddScoped<IDocumentRetentionService,DocumentRetentionService>();
   services.AddScoped<IDocumentReviewService,DocumentReviewService>();
@@ -78,10 +59,7 @@ public static class DependencyInjection
   services.AddScoped<IDocumentPipeline,DocumentPipeline>();
   services.TryAddScoped<IAuthorizedHRFactsProvider,UnconfiguredAuthorizedHRFactsProvider>();
   services.AddScoped<IHRReconciliationService,HRReconciliationService>();
-  if(configuration.GetValue<bool>("AIPlatform:TrustFvnRegisterGatewayForHRReview"))
-   services.AddScoped<IHRCaseReviewerAuthorization,GatewayHRCaseReviewerAuthorization>();
-  else
-   services.TryAddScoped<IHRCaseReviewerAuthorization,UnconfiguredHRCaseReviewerAuthorization>();
+  if(configuration.GetValue<bool>("AIPlatform:TrustFvnRegisterGatewayForHRReview")) services.AddScoped<IHRCaseReviewerAuthorization,GatewayHRCaseReviewerAuthorization>(); else services.TryAddScoped<IHRCaseReviewerAuthorization,UnconfiguredHRCaseReviewerAuthorization>();
   services.AddScoped<IHRCaseReviewService,HRCaseReviewService>();
   services.AddScoped<IHRCaseQueryService,HRCaseQueryService>();
   return services;
