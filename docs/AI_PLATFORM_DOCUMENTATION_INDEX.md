@@ -1,6 +1,6 @@
 # FVN_REGISTER AI Center — Documentation Index
 
-This index describes the reusable AI Core roadmap on branch `feature/ai-manufacturing-data-platform`.
+This index describes the reusable AI Core roadmap on branch `master`.
 
 | Document | Purpose |
 |---|---|
