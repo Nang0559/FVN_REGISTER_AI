@@ -1,8 +1,10 @@
 name: AI Platform validation
 
+# Do not cancel an in-flight PR gate. A cancelled Restore/Build is not a code result and
+# made the exit gate ambiguous when several commits were pushed in succession.
 concurrency:
-  group: ai-platform-validation-${{ github.ref }}
-  cancel-in-progress: true
+  group: ai-platform-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 on:
   push:
