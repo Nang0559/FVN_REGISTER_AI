@@ -1,6 +1,6 @@
 # FVN_REGISTER AI Center — Implementation Status
 
-Branch: `feature/ai-manufacturing-data-platform`  
+Branch: `master`  
 Target: .NET 9 / SQL Server  
 Roadmap: **5 AI Core phases + Phase 6 FVN_REGISTER applications**.
 
@@ -75,12 +75,12 @@ This document is the single status reference for the agreed roadmap. A phase is 
 - Unpublish operation deactivates indexed chunks.
 
 ### Remaining
-- Knowledge publication/search/unpublish and RAG answer API endpoints are present. Gateway-side authorization, admin UI, hybrid retrieval and end-to-end evaluation remain required.
+- Knowledge publication/search/unpublish and RAG answer API endpoints are present. API ACL handling has been changed to obtain scopes from a trusted FVN_REGISTER authorization provider; the safe default denies access until the real gateway adapter is configured. Admin UI, hybrid retrieval and end-to-end evaluation remain required.
 - Policy lifecycle (draft, review, publish, effective dates, expiry, supersession and withdrawal).
 - Better chunking for headings, clauses, tables, Japanese/Vietnamese mixed content and source page/line citations.
 - Hybrid lexical/vector retrieval, reranking, deduplication and retrieval quality evaluation.
 - Grounded answer orchestration, retrieved-chunk citation ID validation and abstention are implemented. Semantic claim-to-source verification, hybrid retrieval/reranking, prompt-injection red-team tests and RAG UI remain open.
-- ACL derivation from trusted FVN_REGISTER permissions; never accept scopes from an untrusted browser.
+- Implement and configure the production FVN_REGISTER ACL adapter, including role/scope mapping and authorization tests. The API no longer treats request-body scopes as authority.
 - RAG conversation UI, trace/audit and retention controls.
 - SQL cosine search is a moderate-scale baseline; benchmark before production scale and introduce a vector database adapter if needed.
 
@@ -128,7 +128,7 @@ Do not run AI migrations against the FVN_REGISTER operational database.
 
 ## Validation status
 
-GitHub Actions workflow `.github/workflows/ai-platform-validation.yml` runs restore/build/tests. The latest run must be checked before claiming a passing build. Local FCC environment integration, SQL migrations, OCR runtime and security tests are not implied by a green compile.
+GitHub Actions workflow `.github/workflows/ai-platform-validation.yml` targets `master` and runs restore/build/tests. No workflow runs were returned during the current audit; do not claim a passing build until a run completes successfully. Local FCC environment integration, SQL migrations, OCR runtime and security tests are not implied by a green compile.
 
 ## Architectural invariants
 
