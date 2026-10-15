@@ -165,15 +165,22 @@ group.MapPost("/knowledge/{documentId:guid}/publish", async (Guid documentId, Kn
     HttpRequest req, IServiceProvider services, CancellationToken ct) =>
 {
     var indexing = services.GetService<IKnowledgeIndexingService>();
+    var access = services.GetService<IAuthorizedKnowledgeAccessProvider>();
     if (indexing is null) return Results.Problem("Knowledge indexing is not configured.", statusCode: 503);
+    if (access is null) return Results.Problem("Trusted knowledge authorization is not configured.", statusCode: 503);
     var tenant = req.Headers["X-Tenant-Code"].ToString().Trim();
+    var actor = req.Headers["X-Actor-Id"].ToString().Trim();
     try
     {
-        var count = await indexing.PublishApprovedDocumentAsync(tenant, documentId, body.ReviewId, body.AccessScopes, ct);
+        var scopes = await access.GetPublicationScopesAsync(tenant, actor, documentId, body.ReviewId, ct);
+        if (scopes.Count == 0) return Results.Forbid();
+        var count = await indexing.PublishApprovedDocumentAsync(tenant, documentId, body.ReviewId, scopes, ct);
         return Results.Ok(new { documentId, indexedChunks = count, status = "Published" });
     }
     catch (KeyNotFoundException) { return Results.NotFound(); }
     catch (UnauthorizedAccessException) { return Results.Forbid(); }
+    catch (InvalidOperationException ex) when (ex.Message == "KNOWLEDGE_AUTHORIZATION_PROVIDER_NOT_CONFIGURED")
+    { return Results.Problem("Trusted FVN_REGISTER knowledge authorization adapter is not configured.", statusCode: 503); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
@@ -181,23 +188,39 @@ group.MapPost("/knowledge/{documentId:guid}/unpublish", async (Guid documentId,
     HttpRequest req, IServiceProvider services, CancellationToken ct) =>
 {
     var indexing = services.GetService<IKnowledgeIndexingService>();
+    var access = services.GetService<IAuthorizedKnowledgeAccessProvider>();
     if (indexing is null) return Results.Problem("Knowledge indexing is not configured.", statusCode: 503);
+    if (access is null) return Results.Problem("Trusted knowledge authorization is not configured.", statusCode: 503);
     var tenant = req.Headers["X-Tenant-Code"].ToString().Trim();
-    await indexing.UnpublishDocumentAsync(tenant, documentId, ct);
-    return Results.Ok(new { documentId, status = "Unpublished" });
+    var actor = req.Headers["X-Actor-Id"].ToString().Trim();
+    try
+    {
+        await access.AuthorizeUnpublishAsync(tenant, actor, documentId, ct);
+        await indexing.UnpublishDocumentAsync(tenant, documentId, ct);
+        return Results.Ok(new { documentId, status = "Unpublished" });
+    }
+    catch (UnauthorizedAccessException) { return Results.Forbid(); }
+    catch (InvalidOperationException ex) when (ex.Message == "KNOWLEDGE_AUTHORIZATION_PROVIDER_NOT_CONFIGURED")
+    { return Results.Problem("Trusted FVN_REGISTER knowledge authorization adapter is not configured.", statusCode: 503); }
 });
 
 group.MapPost("/knowledge/search", async (KnowledgeSearchRequest body, HttpRequest req,
     IServiceProvider services, CancellationToken ct) =>
 {
     var search = services.GetService<IKnowledgeSearchService>();
+    var access = services.GetService<IAuthorizedKnowledgeAccessProvider>();
     if (search is null) return Results.Problem("Knowledge search is not configured.", statusCode: 503);
+    if (access is null) return Results.Problem("Trusted knowledge authorization is not configured.", statusCode: 503);
     var tenant = req.Headers["X-Tenant-Code"].ToString().Trim();
     var actor = req.Headers["X-Actor-Id"].ToString().Trim();
     try
     {
-        return Results.Ok(await search.SearchAsync(tenant, actor, body.AllowedScopes, body.Query, body.Limit, ct));
+        var scopes = await access.GetSearchScopesAsync(tenant, actor, ct);
+        return Results.Ok(await search.SearchAsync(tenant, actor, scopes, body.Query, body.Limit, ct));
     }
+    catch (UnauthorizedAccessException) { return Results.Forbid(); }
+    catch (InvalidOperationException ex) when (ex.Message == "KNOWLEDGE_AUTHORIZATION_PROVIDER_NOT_CONFIGURED")
+    { return Results.Problem("Trusted FVN_REGISTER knowledge authorization adapter is not configured.", statusCode: 503); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
@@ -205,14 +228,20 @@ group.MapPost("/rag/answer", async (RagAnswerRequest body, HttpRequest req,
     IServiceProvider services, CancellationToken ct) =>
 {
     var rag = services.GetService<IRagAnswerService>();
+    var access = services.GetService<IAuthorizedKnowledgeAccessProvider>();
     if (rag is null) return Results.Problem("RAG answer service is not configured.", statusCode: 503);
+    if (access is null) return Results.Problem("Trusted knowledge authorization is not configured.", statusCode: 503);
     var tenant = req.Headers["X-Tenant-Code"].ToString().Trim();
     var actor = req.Headers["X-Actor-Id"].ToString().Trim();
     try
     {
-        return Results.Ok(await rag.AnswerAsync(tenant, actor, body.AllowedScopes, body.Query,
+        var scopes = await access.GetSearchScopesAsync(tenant, actor, ct);
+        return Results.Ok(await rag.AnswerAsync(tenant, actor, scopes, body.Query,
             body.RetrievalLimit, ct));
     }
+    catch (UnauthorizedAccessException) { return Results.Forbid(); }
+    catch (InvalidOperationException ex) when (ex.Message == "KNOWLEDGE_AUTHORIZATION_PROVIDER_NOT_CONFIGURED")
+    { return Results.Problem("Trusted FVN_REGISTER knowledge authorization adapter is not configured.", statusCode: 503); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
@@ -312,7 +341,7 @@ public sealed record FeedbackRequest(Guid? DocumentId,Guid? ExtractionId,string 
 public sealed record ReviewRequest(string Decision,string? CorrectedPayloadJson,string? Comment);
 public partial class Program { }
 public sealed record SchemaDraftRequest(string ModuleCode, FVN_REGISTER.AI.Application.Contracts.ExtractionSchema Schema);
-public sealed record KnowledgePublishRequest(Guid ReviewId, IReadOnlyCollection<string> AccessScopes);
-public sealed record KnowledgeSearchRequest(string Query, int Limit, IReadOnlyCollection<string> AllowedScopes);
+public sealed record KnowledgePublishRequest(Guid ReviewId);
+public sealed record KnowledgeSearchRequest(string Query, int Limit);
 public sealed record FeedbackEvaluationRequest(DateTimeOffset FromUtc, DateTimeOffset ToUtc);
-public sealed record RagAnswerRequest(string Query, int RetrievalLimit, IReadOnlyCollection<string> AllowedScopes);
+public sealed record RagAnswerRequest(string Query, int RetrievalLimit);
