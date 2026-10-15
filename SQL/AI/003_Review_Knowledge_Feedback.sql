@@ -110,7 +110,7 @@ CREATE TABLE ai.AiModelDeployments(
 );
 GO
 
-/* Tenant-scoped access paths used by extraction, review and validation queries. */
+/* Tenant-scoped access paths used by extraction, review, validation and RAG publication. */
 IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiExtractions') AND name=N'IX_AiExtractions_Tenant_Document_Created')
  CREATE INDEX IX_AiExtractions_Tenant_Document_Created ON ai.AiExtractions(TenantCode,DocumentId,CreatedAtUtc DESC);
 GO
@@ -125,4 +125,19 @@ IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiReviews
 GO
 IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiFeedback') AND name=N'IX_AiFeedback_Tenant_Created')
  CREATE INDEX IX_AiFeedback_Tenant_Created ON ai.AiFeedback(TenantCode,CreatedAtUtc DESC);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiKnowledgeChunks') AND name=N'IX_AiKnowledgeChunks_Tenant_Document_Active')
+ CREATE INDEX IX_AiKnowledgeChunks_Tenant_Document_Active ON ai.AiKnowledgeChunks(TenantCode,DocumentId,IsActive,ChunkOrdinal);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiKnowledgeChunks') AND name=N'UX_AiKnowledgeChunks_Tenant_Document_Ordinal')
+BEGIN
+    IF EXISTS(
+        SELECT 1
+        FROM ai.AiKnowledgeChunks
+        GROUP BY TenantCode,DocumentId,ChunkOrdinal
+        HAVING COUNT(*) > 1)
+        THROW 51001, 'Duplicate AI knowledge chunk ordinals exist; clean them before creating UX_AiKnowledgeChunks_Tenant_Document_Ordinal.', 1;
+    CREATE UNIQUE INDEX UX_AiKnowledgeChunks_Tenant_Document_Ordinal
+        ON ai.AiKnowledgeChunks(TenantCode,DocumentId,ChunkOrdinal);
+END
 GO
