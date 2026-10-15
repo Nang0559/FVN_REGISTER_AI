@@ -47,7 +47,7 @@ jobs:
           test "$ready" -eq 1
           docker exec fvn-ai-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -b -Q "IF DB_ID(N'FVN_AI') IS NULL CREATE DATABASE FVN_AI;"
 
-      - name: Apply migrations 001-012 twice and verify checksums
+      - name: Apply migrations 001-013 twice and verify checksums
         env:
           SA_PASSWORD: "FvnAi_CI_Strong!Pass2026"
         run: |
@@ -76,6 +76,7 @@ jobs:
           IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiKnowledgeChunks') AND name=N'UX_AiKnowledgeChunks_Tenant_Document_Ordinal' AND is_unique=1) THROW 52003, 'Knowledge chunk ordinal index is missing.', 1;
           IF NOT EXISTS (SELECT 1 FROM ai.AiSchemaMigrations WHERE MigrationId=N'010_Extraction_Deduplication_And_MigrationLedger' AND Sha256Checksum IS NOT NULL) THROW 52004, 'Migration 010 checksum is missing.', 1;
           IF NOT EXISTS (SELECT 1 FROM ai.AiSchemaMigrations WHERE MigrationId=N'012_KnowledgeChunkConstraint_And_ChecksumLedger' AND MigrationFileName=N'012_KnowledgeChunkConstraint_And_ChecksumLedger.sql' AND Sha256Checksum IS NOT NULL) THROW 52005, 'Migration 012 ledger checksum is missing.', 1;
+          IF NOT EXISTS (SELECT 1 FROM ai.AiSchemaMigrations WHERE MigrationId=N'013_HRCaseTextColumnSizeRepair' AND Sha256Checksum IS NOT NULL) THROW 52006, 'Migration 013 checksum is missing.', 1;
           "
 
       - name: Verify duplicate ordinal migration failure on legacy data
