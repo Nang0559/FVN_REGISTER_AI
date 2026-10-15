@@ -33,7 +33,6 @@ public sealed class DocumentPipeline(
         var document = await db.Documents.SingleOrDefaultAsync(x => x.Id == documentId, cancellationToken)
             ?? throw new InvalidOperationException("INGESTION_DOCUMENT_NOT_FOUND");
         if (document.Status is "Approved" or "Rejected") throw new InvalidOperationException("DOCUMENT_ALREADY_REVIEWED");
-        // Idempotency: a worker may crash after persisting the candidate but before completing the queue job.
         if (await db.Extractions.AnyAsync(x => x.DocumentId == documentId, cancellationToken)) return;
 
         await using var scanStream = await store.OpenReadAsync(document.StorageKey, cancellationToken);
@@ -55,7 +54,13 @@ public sealed class DocumentPipeline(
         IReadOnlyList<ExtractionValidationIssue> validationIssues = [];
         var parserVersion = ParserVersion;
         var promptVersion = "document-classification-v1";
+        string? schemaCode = null;
+        int? schemaVersion = null;
+        var validationStatus = "NotRun";
+        string? validationSummaryJson = null;
+        string provenanceJson;
 
+        var fullTextHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
         if (!string.IsNullOrWhiteSpace(document.ModuleCode) && !string.IsNullOrWhiteSpace(document.SchemaCode))
         {
             var schema = await schemaRegistry.GetPublishedAsync(document.TenantCode, document.ModuleCode,
@@ -64,8 +69,26 @@ public sealed class DocumentPipeline(
             var extracted = await structuredExtractor.ExtractAsync(text, schema, cancellationToken);
             var validation = await validationService.ValidateAsync(new ExtractionValidationRequest(schema, extracted), cancellationToken);
             validationIssues = validation.Issues;
+            validationStatus = validation.IsValid ? "Valid" : "Invalid";
             parserVersion = "schema-extraction-v1";
             promptVersion = "schema-extraction-v1";
+            schemaCode = schema.SchemaCode;
+            schemaVersion = schema.Version;
+            validationSummaryJson = JsonSerializer.Serialize(new
+            {
+                status = validationStatus,
+                schemaCode = schema.SchemaCode,
+                schemaVersion = schema.Version,
+                issueCount = validation.Issues.Count,
+                errorCount = validation.Issues.Count(x => string.Equals(x.Severity, "Error", StringComparison.OrdinalIgnoreCase))
+            }, JsonOptions);
+            provenanceJson = JsonSerializer.Serialize(new
+            {
+                source = new { documentId = document.Id, sha256 = document.Sha256, sourceType = document.SourceType, sourceReference = document.SourceReference },
+                text = new { sha256 = fullTextHash, parserVersion },
+                schema = new { schemaCode = schema.SchemaCode, schemaVersion = schema.Version },
+                model = new { provider = classifier.GetType().Name, promptVersion }
+            }, JsonOptions);
             candidate = new
             {
                 schemaCode = schema.SchemaCode,
@@ -78,25 +101,28 @@ public sealed class DocumentPipeline(
                 {
                     path = x.Path, value = x.Value, confidence = x.Confidence, sourceReference = x.SourceReference, evidenceText = x.EvidenceText
                 }).ToArray(),
-                validation = new
-                {
-                    isValid = validation.IsValid,
-                    issues = validation.Issues
-                },
+                validation = new { isValid = validation.IsValid, issues = validation.Issues },
                 warnings = new[] { "AI extraction is a candidate and requires human review.", "No official business data has been changed." }
             };
         }
         else
         {
             candidate = BuildCandidate(document, documentType, text);
+            provenanceJson = JsonSerializer.Serialize(new
+            {
+                source = new { documentId = document.Id, sha256 = document.Sha256, sourceType = document.SourceType, sourceReference = document.SourceReference },
+                text = new { sha256 = fullTextHash, parserVersion },
+                model = new { provider = classifier.GetType().Name, promptVersion }
+            }, JsonOptions);
         }
 
         var extraction = new AiExtractionRecord
         {
             Id = Guid.NewGuid(), DocumentId = document.Id, TenantCode = document.TenantCode,
             DocumentType = documentType, ClassificationConfidence = (decimal)confidence,
-            CandidateJson = JsonSerializer.Serialize(candidate, JsonOptions),
-            ParserVersion = parserVersion, ModelProvider = classifier.GetType().Name,
+            SchemaCode = schemaCode, SchemaVersion = schemaVersion, ValidationStatus = validationStatus,
+            CandidateJson = JsonSerializer.Serialize(candidate, JsonOptions), ValidationSummaryJson = validationSummaryJson,
+            ProvenanceJson = provenanceJson, ParserVersion = parserVersion, ModelProvider = classifier.GetType().Name,
             ModelVersion = "provider-routed", PromptVersion = promptVersion, CreatedAtUtc = DateTimeOffset.UtcNow
         };
         db.Extractions.Add(extraction);
@@ -147,11 +173,5 @@ public sealed class DocumentPipeline(
             extractedFields = fields, evidence, fullTextSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant(),
             warnings = new[] { "Candidate is machine-generated and requires human verification.", "No official HR record has been changed." }
         };
-    }
-
-    private static string? FindValue(string text, string pattern)
-    {
-        var match = System.Text.RegularExpressions.Regex.Match(text, pattern);
-        return match.Success ? match.Value : null;
     }
 }
