@@ -60,7 +60,12 @@ public sealed class AiExtractionRecord
     public string TenantCode { get; set; } = "";
     public string DocumentType { get; set; } = "";
     public decimal ClassificationConfidence { get; set; }
+    public string? SchemaCode { get; set; }
+    public int? SchemaVersion { get; set; }
+    public string ValidationStatus { get; set; } = "NotRun";
     public string CandidateJson { get; set; } = "{}";
+    public string? ValidationSummaryJson { get; set; }
+    public string? ProvenanceJson { get; set; }
     public string ParserVersion { get; set; } = "";
     public string? ModelProvider { get; set; }
     public string? ModelVersion { get; set; }
