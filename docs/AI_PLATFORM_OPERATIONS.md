@@ -48,7 +48,7 @@ For an empty dedicated database, apply `SQL/AI/001_...` through `SQL/AI/012_...`
 - Use `scripts/apply-ai-migrations.sh` for deployments. It checks known checksums before applying and registers checksum metadata where it can safely verify the file. Run it once for deployment; CI invokes it twice to exercise repeatability.
 - Back up the database and verify restore before production migration. Take a schema/data snapshot or tested full backup, record current migration rows, and rehearse on a restored copy.
 - Do not edit a migration already applied to any shared environment. Add a new numbered migration and update the runner/workflow list instead.
-- Migration 012 fails if duplicate `(TenantCode, DocumentId, ChunkOrdinal)` rows exist. Reconcile duplicates explicitly; never delete knowledge or audit records automatically as a generic migration side effect.
+- Migration 012 fails if duplicate `(TenantCode, DocumentId, ChunkOrdinal)` rows exist. Reconcile duplicates explicitly; never delete knowledge or audit records automatically as a generic migration side effect. Migration 013 fixes HR case text-column lengths; its clean-install predecessor had invalid `NVARCHAR(8000)` declarations, which SQL Server rejects.
 
 ## Rollback and recovery
 
