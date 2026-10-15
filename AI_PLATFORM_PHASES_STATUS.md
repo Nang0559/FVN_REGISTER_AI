@@ -33,7 +33,7 @@ Therefore these capabilities are **implemented as secured application boundaries
 
 ## SQL migration order
 
-For an empty dedicated `FVN_AI` database, run migrations `001` through `012` in this one sequence:
+For an empty dedicated `FVN_AI` database, run migrations `001` through `013` in this one sequence:
 
 1. `SQL/AI/001_CreateAiIngestion.sql`
 2. `SQL/AI/002_ReliableIngestionQueue.sql`
@@ -47,6 +47,7 @@ For an empty dedicated `FVN_AI` database, run migrations `001` through `012` in 
 10. `SQL/AI/010_Extraction_Deduplication_And_MigrationLedger.sql`
 11. `SQL/AI/011_Persistent_Request_Replay_Protection.sql`
 12. `SQL/AI/012_KnowledgeChunkConstraint_And_ChecksumLedger.sql`
+13. `SQL/AI/013_HRCaseTextColumnSizeRepair.sql`
 
 `007` requires the structures created by `001–006`; `008` explicitly requires `007`; `009` explicitly requires the knowledge structures created before it. `010` requires `001–009`, adds a unique filtered index for versioned extractions, and initializes a migration ledger for subsequent tracking.
 
