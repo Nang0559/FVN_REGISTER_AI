@@ -51,7 +51,7 @@ For an empty dedicated `FVN_AI` database, run migrations `001` through `013` in 
 
 `007` requires the structures created by `001–006`; `008` explicitly requires `007`; `009` explicitly requires the knowledge structures created before it. `010` requires `001–009`, adds a unique filtered index for versioned extractions, and initializes a migration ledger for subsequent tracking.
 
-All migrations are intended to be repeatable (`IF NOT EXISTS` / `COL_LENGTH` / guarded index or procedure creation). The knowledge-chunk ordinal unique index is introduced by migration `012`, not retrofitted into historical migrations. Existing duplicate ordinals cause `012` to stop with a clear error; reconcile them before retrying. Migration `012` extends the ledger with filename and SHA-256 checksum fields. A NULL checksum means the older migration is an unverified legacy baseline. Runtime verification against a real SQL Server is still required before treating repeatability as an operational guarantee.
+All migrations are intended to be repeatable (`IF NOT EXISTS` / `COL_LENGTH` / guarded index or procedure creation). The duplicate chunk-ordinal index is guarded by forward migration `012`, which ensures older databases converge and fails clearly if duplicate rows exist. Migration `003` does not carry the added index block; historical migration `005` retains its pre-existing guarded index for clean installs. Do not edit migrations already applied in shared environments. Migration `012` also extends the ledger with filename and SHA-256 checksum fields. A NULL checksum means an unverified legacy baseline. Runtime verification against a real SQL Server is still required before treating repeatability as an operational guarantee.
 
 ## Exit-gate test coverage
 
