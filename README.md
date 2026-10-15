@@ -71,3 +71,7 @@ Báo cáo nghiệp vụ chịu kiểm soát theo capability và phạm vi dữ l
 ## Cấu hình và bảo mật
 
 API dùng `ConnectionStrings:DefaultConnection`. Không commit secret, JWT key hoặc connection string vào repository. Dùng .NET User Secrets cho development và environment/secret store cho production.
+
+AI API yêu cầu migration `SQL/AI/011_Persistent_Request_Replay_Protection.sql` để chống phát lại request giữa nhiều instance. Đặt `AIPlatform:ContextSigningKey` tối thiểu 32 ký tự và dùng cùng secret với gateway tin cậy.
+
+`AIPlatform:RequireContentBoundSignatures` mặc định là `false` để tương thích signer hiện tại. Khi bật `true`, gateway phải ký canonical payload theo đúng thứ tự: HTTP method viết hoa, path + query string, tenant code, actor ID, Unix timestamp, nonce, SHA-256 body dạng HEX viết hoa; các trường phân cách bằng newline. API hash toàn bộ raw request body trước khi endpoint đọc body. Chỉ bật sau khi signer phía gateway đã được cập nhật đồng bộ; nếu bật riêng API, các request đang ký theo định dạng cũ sẽ bị từ chối.
