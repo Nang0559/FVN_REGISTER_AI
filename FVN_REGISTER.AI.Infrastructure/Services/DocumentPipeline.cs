@@ -8,7 +8,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FVN_REGISTER.AI.Infrastructure.Services;
 
-/// <summary>Fail-closed document pipeline. Only positively scanned documents can become review candidates.</summary>
 public sealed class DocumentPipeline(
     AiPlatformDbContext db,
     IOriginalDocumentStore store,
@@ -18,6 +17,7 @@ public sealed class DocumentPipeline(
     IDocumentRepresentationExtractor representationExtractor,
     IExtractionSchemaRegistry schemaRegistry,
     ISchemaDrivenDocumentExtractor structuredExtractor,
+    IExtractionFieldMappingService mappingService,
     IExtractionValidationService validationService) : IDocumentPipeline
 {
     private const string ParserVersion = "local-text-v2";
@@ -26,13 +26,9 @@ public sealed class DocumentPipeline(
     public async Task ProcessAsync(Guid documentId, string workerId, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
-        var leaseOwned = await db.IngestionJobs.AnyAsync(x =>
-            x.DocumentId == documentId && x.Status == "Running" && x.LeaseOwner == workerId &&
-            x.LeaseUntilUtc.HasValue && x.LeaseUntilUtc.Value > now, cancellationToken);
+        var leaseOwned = await db.IngestionJobs.AnyAsync(x => x.DocumentId == documentId && x.Status == "Running" && x.LeaseOwner == workerId && x.LeaseUntilUtc.HasValue && x.LeaseUntilUtc.Value > now, cancellationToken);
         if (!leaseOwned) throw new InvalidOperationException("INGESTION_LEASE_LOST");
-
-        var document = await db.Documents.SingleOrDefaultAsync(x => x.Id == documentId, cancellationToken)
-            ?? throw new InvalidOperationException("INGESTION_DOCUMENT_NOT_FOUND");
+        var document = await db.Documents.SingleOrDefaultAsync(x => x.Id == documentId, cancellationToken) ?? throw new InvalidOperationException("INGESTION_DOCUMENT_NOT_FOUND");
         if (document.Status is "Approved" or "Rejected" or "Archived") throw new InvalidOperationException("DOCUMENT_ALREADY_REVIEWED");
         if (await db.Extractions.AnyAsync(x => x.DocumentId == documentId, cancellationToken)) return;
 
@@ -53,6 +49,8 @@ public sealed class DocumentPipeline(
         var modelText = representation.ToModelText();
         if (string.IsNullOrWhiteSpace(modelText)) throw new InvalidDataException("EXTRACTION_EMPTY_REPRESENTATION");
         var (documentType, confidence) = await classifier.ClassifyAsync(modelText, cancellationToken);
+        var fullTextHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(modelText))).ToLowerInvariant();
+        var representationJson = JsonSerializer.Serialize(representation, JsonOptions);
 
         object candidate;
         IReadOnlyList<ExtractionValidationIssue> validationIssues = [];
@@ -62,16 +60,14 @@ public sealed class DocumentPipeline(
         int? schemaVersion = null;
         var validationStatus = "NotRun";
         string? validationSummaryJson = null;
-        var fullTextHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(modelText))).ToLowerInvariant();
-        var representationJson = JsonSerializer.Serialize(representation, JsonOptions);
         string provenanceJson;
 
         if (!string.IsNullOrWhiteSpace(document.ModuleCode) && !string.IsNullOrWhiteSpace(document.SchemaCode))
         {
-            var schema = await schemaRegistry.GetPublishedAsync(document.TenantCode, document.ModuleCode, document.SchemaCode, cancellationToken)
-                ?? throw new InvalidOperationException("EXTRACTION_SCHEMA_NOT_PUBLISHED");
+            var schema = await schemaRegistry.GetPublishedAsync(document.TenantCode, document.ModuleCode, document.SchemaCode, cancellationToken) ?? throw new InvalidOperationException("EXTRACTION_SCHEMA_NOT_PUBLISHED");
             var extracted = await structuredExtractor.ExtractAsync(modelText, schema, cancellationToken);
-            var validation = await validationService.ValidateAsync(new ExtractionValidationRequest(schema, extracted), cancellationToken);
+            var mapped = mappingService.Apply(schema, extracted);
+            var validation = await validationService.ValidateAsync(new ExtractionValidationRequest(schema, mapped), cancellationToken);
             validationIssues = validation.Issues;
             validationStatus = validation.IsValid ? "Valid" : "Invalid";
             parserVersion = "schema-extraction-v2";
@@ -84,25 +80,25 @@ public sealed class DocumentPipeline(
                 schemaCode = schema.SchemaCode,
                 schemaVersion = schema.Version,
                 issueCount = validation.Issues.Count,
-                errorCount = validation.Issues.Count(x => string.Equals(x.Severity, "Error", StringComparison.OrdinalIgnoreCase))
+                errorCount = validation.Issues.Count(x => string.Equals(x.Severity, "Error", StringComparison.OrdinalIgnoreCase)),
+                acceptedCount = validation.AcceptedCandidates.Count
             }, JsonOptions);
             provenanceJson = JsonSerializer.Serialize(new
             {
                 source = new { documentId = document.Id, sha256 = document.Sha256, sourceType = document.SourceType, sourceReference = document.SourceReference },
                 representation = new { version = representation.Version, mediaType = representation.MediaType, isOcr = representation.IsOcr, textSha256 = fullTextHash },
                 schema = new { schemaCode = schema.SchemaCode, schemaVersion = schema.Version },
-                model = new { provider = classifier.GetType().Name, promptVersion }
+                model = new { provider = classifier.GetType().Name, promptVersion },
+                mapping = schema.Mappings?.Select(x => new { x.TargetPath, x.SourceHints, x.Normalization }).ToArray()
             }, JsonOptions);
+            var standardized = new StandardizedExtractionResult(schema.SchemaCode, schema.Version, mapped, validation, representation.Version, fullTextHash, parserVersion, classifier.GetType().Name, "provider-routed", promptVersion);
             candidate = new
             {
-                schemaCode = schema.SchemaCode,
-                schemaVersion = schema.Version,
+                standardized,
                 documentId = document.Id,
                 fileName = document.FileName,
                 documentType,
                 source = new { sha256 = document.Sha256 },
-                extractedFields = extracted.Select(x => new { path = x.Path, value = x.Value, confidence = x.Confidence, sourceReference = x.SourceReference, evidenceText = x.EvidenceText }).ToArray(),
-                validation = new { isValid = validation.IsValid, issues = validation.Issues },
                 warnings = new[] { "AI extraction is a candidate and requires human review.", "No official business data has been changed." }
             };
         }
@@ -129,34 +125,21 @@ public sealed class DocumentPipeline(
         };
         db.Extractions.Add(extraction);
         foreach (var issue in validationIssues)
-            db.ValidationIssues.Add(new AiValidationIssueRecord
-            {
-                Id = Guid.NewGuid(), ExtractionId = extraction.Id, FieldPath = issue.Path,
-                RuleCode = issue.Code, Severity = issue.Severity, Message = issue.Message,
-                CreatedAtUtc = DateTimeOffset.UtcNow
-            });
+            db.ValidationIssues.Add(new AiValidationIssueRecord { Id = Guid.NewGuid(), ExtractionId = extraction.Id, FieldPath = issue.Path, RuleCode = issue.Code, Severity = issue.Severity, Message = issue.Message, CreatedAtUtc = DateTimeOffset.UtcNow });
         document.Status = "AwaitingHumanReview";
         await db.SaveChangesAsync(cancellationToken);
     }
 
     private static object BuildCandidate(AiDocumentRecord document, string type, string text)
     {
-        var lines = text.Replace("\r\n", "\n").Replace('\r', '\n')
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var evidenceRows = new List<object>();
-        var pageNumber = 1;
+        var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var evidenceRows = new List<object>(); var pageNumber = 1;
         for (var index = 0; index < Math.Min(lines.Length, 500); index++)
         {
-            var line = lines[index];
-            var pageMarker = System.Text.RegularExpressions.Regex.Match(line, @"^\[PAGE (?<page>\d+)\]$");
-            if (pageMarker.Success && int.TryParse(pageMarker.Groups["page"].Value, out var parsedPage))
-            {
-                pageNumber = parsedPage;
-                continue;
-            }
+            var line = lines[index]; var pageMarker = System.Text.RegularExpressions.Regex.Match(line, @"^\[PAGE (?<page>\d+)\]$");
+            if (pageMarker.Success && int.TryParse(pageMarker.Groups["page"].Value, out var parsedPage)) { pageNumber = parsedPage; continue; }
             evidenceRows.Add(new { lineNumber = index + 1, pageNumber, locator = $"page:{pageNumber};line:{index + 1}", text = line.Length > 4000 ? line[..4000] : line });
         }
-        var evidence = evidenceRows.ToArray();
         var fields = new Dictionary<string, object?>
         {
             ["dateCandidates"] = System.Text.RegularExpressions.Regex.Matches(text, @"\b(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})\b").Select(m => m.Value).Distinct().Take(100).ToArray(),
@@ -166,12 +149,6 @@ public sealed class DocumentPipeline(
             ["dayCandidates"] = System.Text.RegularExpressions.Regex.Matches(text, @"(?i)\b(?<value>\d{1,3}(?:[.,]\d{1,2})?)\s*(?:ngày|days?)\b").Select(m => m.Groups["value"].Value).Distinct().Take(100).ToArray(),
             ["emailCandidates"] = System.Text.RegularExpressions.Regex.Matches(text, @"(?i)\b[^\s@]+@[^\s@]+\.[^\s@]+\b").Select(m => m.Value).Distinct().Take(100).ToArray()
         };
-        return new
-        {
-            schemaVersion = "1.0", documentId = document.Id, fileName = document.FileName,
-            documentType = type, source = new { sha256 = document.Sha256 }, extractedFields = fields,
-            evidence, fullTextSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant(),
-            warnings = new[] { "Candidate is machine-generated and requires human verification.", "No official HR record has been changed." }
-        };
+        return new { schemaVersion = "1.0", documentId = document.Id, fileName = document.FileName, documentType = type, source = new { sha256 = document.Sha256 }, extractedFields = fields, evidence = evidenceRows.ToArray(), fullTextSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant(), warnings = new[] { "Candidate is machine-generated and requires human verification.", "No official HR record has been changed." } };
     }
 }
