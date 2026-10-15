@@ -22,6 +22,7 @@ migrations=(
   010_Extraction_Deduplication_And_MigrationLedger.sql
   011_Persistent_Request_Replay_Protection.sql
   012_KnowledgeChunkConstraint_And_ChecksumLedger.sql
+  013_HRCaseTextColumnSizeRepair.sql
 )
 
 scalar() {
@@ -76,4 +77,4 @@ for file in "${migrations[@]}"; do
   "
 done
 
-echo "Applied all 12 AI migrations; checksum ledger updated."
+echo "Applied all 13 AI migrations; checksum ledger updated."
