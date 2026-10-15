@@ -3,10 +3,10 @@ name: AI Platform validation
 on:
   push:
     branches:
-      - feature/ai-manufacturing-data-platform
+      - master
   pull_request:
     branches:
-      - feature/ai-manufacturing-data-platform
+      - master
 
 jobs:
   build-and-test:
