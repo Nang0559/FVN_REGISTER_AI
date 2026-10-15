@@ -3,7 +3,7 @@
 **Version:** 1.1  
 **Runtime target:** .NET 9 / SQL Server  
 **Deployment:** Hybrid, on-premises first  
-**Branch:** `feature/ai-manufacturing-data-platform`  
+**Branch:** `master`  
 **Document status:** Current architecture baseline. Implemented capabilities and pending work are distinguished explicitly in [Phase Status](AI_PLATFORM_PHASES_STATUS.md).
 
 ## 1. Product vision
@@ -32,7 +32,7 @@ FVN_REGISTER remains authoritative for employee identity, permissions, requests,
 - A model-generated candidate, answer or recommendation is not an approved business decision.
 - Business changes require an explicit user/HR action, then fresh authorization and domain validation inside FVN_REGISTER.
 - No arbitrary model-generated SQL, shell command or script execution.
-- Retrieval permissions are enforced before retrieved content enters a model prompt.
+- Retrieval permissions must be resolved by a trusted FVN_REGISTER authorization adapter before content enters a model prompt. The API must never accept ACL scopes from request-body input; until the adapter is configured, knowledge search/publication must fail closed.
 - Only HR-approved and effective policy revisions are eligible for normal policy answers.
 - Unsupported, stale, conflicting or insufficient evidence results in clarification or escalation, not a plausible guess.
 
@@ -91,7 +91,7 @@ Integration uses versioned HTTP contracts and service-to-service authentication.
 - SQL Server dedicated AI database.
 - Private filesystem/object storage for immutable originals and quarantine (shared path accessible by API and Worker); later replaceable with S3-compatible object storage.
 - ClamAV `clamd` service for malware scanning.
-- Tesseract plus PDF rasterizer for scanned documents (pending integration).
+- Tesseract + Poppler OCR adapter for scanned/image documents is present in code; production readiness still requires host binary/language-pack installation, timeout/quality checks and end-to-end verification.
 - Ollama for local LLM and embedding models (chat/classification/extraction and embedding adapters are present; end-to-end quality evaluation remains open).
 - SQL cosine vector retrieval is the current baseline; Qdrant remains a scale-out adapter option after workload benchmarks.
 - Network segmentation; no public exposure of AI API or model endpoints.
@@ -133,7 +133,7 @@ flowchart TD
 9. Validate data and retain field-level provenance, confidence, parser/model/prompt/schema version.
 10. Human review corrects or accepts; keep original candidate and all review history.
 
-Current code baseline: TXT/CSV, XLSX, DOCX and text-layer PDF extraction; SQL queue/Worker with lease renewal; ClamAV adapter; generic classifier; schema-driven extraction/validation ports; explicit human-reviewed knowledge publication; SQL vector search and feedback evaluation foundations. OCR for scanned/image-only files, full worker orchestration with published schemas, RAG answer/citation validation, and full integration verification remain open. See phase status.
+Current code baseline: TXT/CSV, XLSX, DOCX and text-layer PDF extraction; SQL queue/Worker with lease renewal; ClamAV adapter; generic classifier; schema-driven extraction/validation ports; explicit human-reviewed knowledge publication; SQL vector search and feedback evaluation foundations. The OCR adapter, schema-driven extraction path, and RAG answer/citation validation exist in code. Host OCR runtime verification, trusted FVN_REGISTER ACL adapter, production policy lifecycle, end-to-end pipeline verification and UI integration remain open. See phase status.
 
 ## 7. HR Policy Assistant — controlled policy knowledge
 
