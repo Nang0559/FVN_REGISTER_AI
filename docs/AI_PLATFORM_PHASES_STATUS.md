@@ -69,7 +69,7 @@ This document is the single status reference for the agreed roadmap. A phase is 
 ### Implemented foundations
 - Knowledge chunk SQL table and EF mapping.
 - Ollama embedding adapter.
-- SQL-backed cosine vector search with tenant filtering and access-scope filtering before content is returned to the RAG caller. Current implementation bounds candidate chunks before cosine scoring; large-corpus recall remains a known limitation pending database-side vector indexing or a retrieval strategy that does not silently omit older chunks.
+- SQL-backed cosine vector search with tenant filtering and access-scope filtering before content is returned to the RAG caller. The former hard 5,000-candidate truncation has been removed; this improves recall but can increase SQL/memory/CPU cost. Large-corpus indexing and performance benchmarks remain open.
 - Explicit publication service: only human-approved extraction reviews can be indexed; upload alone does not publish knowledge.
 - Chunk metadata includes document, review, page/section, ordinal and access scopes.
 - Unpublish operation deactivates indexed chunks.
@@ -136,7 +136,7 @@ Do not run AI migrations against the FVN_REGISTER operational database.
 
 ## Validation status
 
-GitHub Actions workflow `.github/workflows/ai-platform-validation.yml` targets `master` and runs restore/build/tests. A run has been triggered for the current changes and is still pending; do not claim a passing build until restore, build and tests complete successfully. Local FCC environment integration, SQL migrations, OCR runtime and security tests are not implied by a green compile.
+GitHub Actions workflow `.github/workflows/ai-platform-sql-validation.yml` starts SQL Server 2022 and tests migrations 001–012 twice, migration 012's duplicate-ordinal failure, concurrent queue claims, concurrent nonce uniqueness, and tenant-scoped duplicate-key behavior. These checks are defined in CI but are not evidence of a passing run until GitHub Actions reports success. The application build workflow, local FCC integration, OCR runtime and real authorization-adapter tests remain separate gates.
 
 ## Architectural invariants
 
