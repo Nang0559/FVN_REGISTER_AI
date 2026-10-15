@@ -5,7 +5,8 @@ This index describes the reusable AI Core roadmap. The implementation status doc
 | Document | Purpose |
 |---|---|
 | [AI Platform Architecture](AI_PLATFORM_ARCHITECTURE.md) | Module-neutral architecture, boundaries, security, integration and deployment |
-| [AI Platform Phase Status](AI_PLATFORM_PHASES_STATUS.md) | The authoritative status of Phase 1–5 Core and Phase 6 applications |
+| [AI Platform Phase Status](AI_PLATFORM_PHASES_STATUS.md) | Honest partial/foundation status of Phase 1–5 Core and Phase 6 applications |
+| [AI Platform Operations](AI_PLATFORM_OPERATIONS.md) | Configuration/secrets, migration rollout/rollback, backup/restore, metrics/logs, model cost controls |
 | [AI Platform Implementation Plan](AI_PLATFORM_IMPLEMENTATION_PLAN.md) | Work packages, dependencies and exit gates |
 | [HR Policy Assistant Design](AI_HR_POLICY_ASSISTANT.md) | HR policy knowledge lifecycle and future RAG application |
 | [HR Evidence Reconciliation Pilot](AI_HR_RECONCILIATION_PILOT.md) | HR pilot scope and integration boundary |
