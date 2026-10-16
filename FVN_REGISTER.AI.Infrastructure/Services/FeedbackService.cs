@@ -29,12 +29,12 @@ public sealed class FeedbackService(AiPlatformDbContext db) : IFeedbackService
 
         var extraction = extractionId.HasValue
             ? await db.Extractions.AsNoTracking().Where(x => x.Id == extractionId.Value && x.TenantCode == tenantCode)
-                .Select(x => new { x.ParserVersion, x.ModelVersion, x.PromptVersion }).SingleOrDefaultAsync(cancellationToken)
+                .Select(x => new { x.ParserVersion, x.ModelVersion, x.PromptVersion, x.ReleaseId }).SingleOrDefaultAsync(cancellationToken)
             : null;
         db.Feedback.Add(new AiFeedbackRecord
         {
-            Id = Guid.NewGuid(), TenantCode = tenantCode, ReviewerId = reviewerId,
-            DocumentId = documentId, ExtractionId = extractionId, FeedbackType = feedbackType,
+            Id = Guid.NewGuid(), TenantCode = tenantCode, DocumentId = documentId, ExtractionId = extractionId,
+            ReleaseId = extraction?.ReleaseId, ReviewerId = reviewerId, FeedbackType = feedbackType,
             BeforeJson = beforeJson, AfterJson = afterJson, Reason = reason?.Trim(),
             ParserVersion = extraction?.ParserVersion, ModelVersion = extraction?.ModelVersion,
             PromptVersion = extraction?.PromptVersion, CreatedAtUtc = DateTimeOffset.UtcNow
@@ -58,6 +58,7 @@ public sealed class AiFeedbackRecord
     public string TenantCode { get; set; } = "";
     public Guid? DocumentId { get; set; }
     public Guid? ExtractionId { get; set; }
+    public Guid? ReleaseId { get; set; }
     public string ReviewerId { get; set; } = "";
     public string FeedbackType { get; set; } = "";
     public string? BeforeJson { get; set; }
