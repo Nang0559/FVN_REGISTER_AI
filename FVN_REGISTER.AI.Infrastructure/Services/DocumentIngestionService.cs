@@ -38,14 +38,29 @@ public sealed class DocumentIngestionService(
         var stored = await store.SaveAsync(id, new LimitStream(content, max), ct);
         try
         {
-            var duplicate = await db.Documents.AsNoTracking().FirstOrDefaultAsync(
-                x => x.TenantCode == tenant && x.Sha256 == stored.Sha256 &&
+            var duplicate = await db.Documents.FirstOrDefaultAsync(
+                x => x.TenantCode == tenant && x.DedupActive && x.Sha256 == stored.Sha256 &&
                      x.ModuleCode == moduleCode && x.SchemaCode == schemaCode, ct);
             if (duplicate is not null)
             {
                 await store.DeleteAsync(stored.StorageKey, ct);
-                var old = await db.IngestionJobs.AsNoTracking().FirstOrDefaultAsync(x => x.DocumentId == duplicate.Id, ct);
-                return new(duplicate.Id, old?.Id ?? Guid.Empty, duplicate.FileName, duplicate.Length,
+                var oldJob = await db.IngestionJobs.SingleOrDefaultAsync(x => x.DocumentId == duplicate.Id, ct);
+                if (oldJob is not null && oldJob.Status is "DeadLetter" or "Failed")
+                {
+                    oldJob.Status = "Queued";
+                    oldJob.AttemptCount = 0;
+                    oldJob.NextAttemptAtUtc = DateTimeOffset.UtcNow;
+                    oldJob.StartedAtUtc = null;
+                    oldJob.LastAttemptAtUtc = null;
+                    oldJob.LastErrorAtUtc = null;
+                    oldJob.LeaseOwner = null;
+                    oldJob.LeaseUntilUtc = null;
+                    oldJob.CompletedAtUtc = null;
+                    oldJob.FailureCode = null;
+                    duplicate.Status = "Quarantined";
+                    await db.SaveChangesAsync(ct);
+                }
+                return new(duplicate.Id, oldJob?.Id ?? Guid.Empty, duplicate.FileName, duplicate.Length,
                     duplicate.Sha256, duplicate.Status, true);
             }
 
@@ -68,7 +83,8 @@ public sealed class DocumentIngestionService(
                 SourceReference = sourceReference ?? valid.FileName,
                 RetentionUntilUtc = retentionUntilUtc,
                 ReceivedAtUtc = now,
-                Status = "Quarantined"
+                Status = "Quarantined",
+                DedupActive = true
             });
             db.IngestionJobs.Add(new AiIngestionJobRecord
             {
@@ -81,7 +97,7 @@ public sealed class DocumentIngestionService(
         {
             await store.DeleteAsync(stored.StorageKey, CancellationToken.None);
             var old = await db.Documents.AsNoTracking().FirstOrDefaultAsync(
-                x => x.TenantCode == tenant && x.Sha256 == stored.Sha256 &&
+                x => x.TenantCode == tenant && x.DedupActive && x.Sha256 == stored.Sha256 &&
                      x.ModuleCode == moduleCode && x.SchemaCode == schemaCode, ct);
             if (old is null) throw;
             var job = await db.IngestionJobs.AsNoTracking().FirstOrDefaultAsync(x => x.DocumentId == old.Id, ct);
