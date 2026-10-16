@@ -1,14 +1,14 @@
 # FVN_REGISTER AI Center — Documentation Index
 
-This index describes the reusable AI Core roadmap. The implementation status document tracks the current feature branch and its merge target.
+This index lists the current reusable AI Core design and operations documents. The **root** `AI_PLATFORM_PHASES_STATUS.md` is the single source of truth for readiness.
 
 | Document | Purpose |
 |---|---|
-| [AI Platform Architecture](AI_PLATFORM_ARCHITECTURE.md) | Module-neutral architecture, boundaries, security, integration and deployment |
-| [AI Platform Phase Status](AI_PLATFORM_PHASES_STATUS.md) | Honest partial/foundation status of Phase 1–5 Core and Phase 6 applications |
-| [AI Platform Operations](AI_PLATFORM_OPERATIONS.md) | Configuration/secrets, migration rollout/rollback, backup/restore, metrics/logs, model cost controls |
+| [AI Platform Architecture](AI_PLATFORM_ARCHITECTURE.md) | Current module-neutral architecture, boundaries, security and deployment |
+| [AI Platform Phase Status](../AI_PLATFORM_PHASES_STATUS.md) | Canonical foundation/partial status of Phase 1–5 Core and Phase 6 applications |
+| [AI Platform Operations](AI_PLATFORM_OPERATIONS.md) | Configuration/secrets, migrations 001–014, backup/restore, monitoring and cost controls |
 | [AI Platform Implementation Plan](AI_PLATFORM_IMPLEMENTATION_PLAN.md) | Work packages, dependencies and exit gates |
-| [HR Policy Assistant Design](AI_HR_POLICY_ASSISTANT.md) | HR policy knowledge lifecycle and future RAG application |
+| [HR Policy Assistant Design](AI_HR_POLICY_ASSISTANT.md) | Policy knowledge lifecycle and RAG application design; implementation status remains subject to the canonical phase status |
 | [HR Evidence Reconciliation Pilot](AI_HR_RECONCILIATION_PILOT.md) | HR pilot scope and integration boundary |
 | [HR Case Assistant Implementation](AI_HR_CASE_ASSISTANT_IMPLEMENTATION.md) | HR facts gateway, evidence reconciliation, review workflow and deployment details |
 
@@ -26,6 +26,6 @@ This index describes the reusable AI Core roadmap. The implementation status doc
 
 ## Architectural rule
 
-Phase 1–5 must remain reusable and module-neutral. OT, leave, attendance, trip, equipment and other business semantics belong in published schemas, validation profiles and FVN_REGISTER adapters. HR Case Assistant is a Phase 6 pilot; it is not the architecture template for every module.
+Phase 1–5 remain reusable and module-neutral. OT, leave, attendance, trip, equipment and other business semantics belong in published schemas, validation profiles and FVN_REGISTER adapters. HR Case Assistant is a Phase 6 pilot; it is not the architecture template for every module.
 
-The [Phase Status](AI_PLATFORM_PHASES_STATUS.md) document is the single source of truth for implementation status. A design or SQL table alone does not mean a capability is complete.
+The [root Phase Status](../AI_PLATFORM_PHASES_STATUS.md) document is the only implementation-status source. A design, SQL table or isolated code path does not mean a capability is complete.
