@@ -5,6 +5,7 @@ public sealed class KnowledgeSearchOptions
     public double SemanticWeight { get; set; } = 0.75;
     public double LexicalWeight { get; set; } = 0.25;
     public int CandidateLimit { get; set; } = 50;
+    public int MaxCandidateScan { get; set; } = 5000;
     public double MinimumScore { get; set; } = 0.05;
 }
 public sealed record KnowledgePublicationStatus(Guid DocumentId, string Status, int ActiveChunkCount, int PublicationVersion, DateTimeOffset? PublishedAtUtc, DateTimeOffset? UnpublishedAtUtc);
