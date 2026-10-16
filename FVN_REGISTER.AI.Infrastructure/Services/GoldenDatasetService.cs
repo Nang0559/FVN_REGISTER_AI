@@ -20,22 +20,34 @@ public sealed class GoldenDatasetService(AiPlatformDbContext db) : IGoldenDatase
     public async Task EvaluateCaseAsync(string tenantCode, Guid caseId, Guid? releaseId, string actualJson, bool passed, string? failureReason, CancellationToken cancellationToken = default)
     {
         Require(tenantCode, 64, nameof(tenantCode)); ValidateJson(actualJson, nameof(actualJson));
-        var exists = await db.Set<AiGoldenDatasetCaseRecord>().AnyAsync(x => x.Id == caseId && x.TenantCode == tenantCode.Trim() && x.IsActive, cancellationToken);
+        var tenant = tenantCode.Trim();
+        var exists = await db.Set<AiGoldenDatasetCaseRecord>().AnyAsync(x => x.Id == caseId && x.TenantCode == tenant && x.IsActive, cancellationToken);
         if (!exists) throw new KeyNotFoundException("Golden dataset case was not found.");
-        if (releaseId.HasValue && !await db.Set<AiModelReleaseRecord>().AnyAsync(x => x.Id == releaseId.Value && x.TenantCode == tenantCode.Trim(), cancellationToken)) throw new KeyNotFoundException("AI release was not found.");
-        db.Set<AiGoldenDatasetEvaluationRecord>().Add(new AiGoldenDatasetEvaluationRecord { Id = Guid.NewGuid(), CaseId = caseId, ReleaseId = releaseId, Passed = passed, ActualJson = actualJson, FailureReason = failureReason?.Trim(), EvaluatedAtUtc = DateTimeOffset.UtcNow });
+        if (releaseId.HasValue && !await db.Set<AiModelReleaseRecord>().AnyAsync(x => x.Id == releaseId.Value && x.TenantCode == tenant, cancellationToken)) throw new KeyNotFoundException("AI release was not found.");
+        db.Set<AiGoldenDatasetEvaluationRecord>().Add(new AiGoldenDatasetEvaluationRecord { Id = Guid.NewGuid(), TenantCode = tenant, CaseId = caseId, ReleaseId = releaseId, Passed = passed, ActualJson = actualJson, FailureReason = failureReason?.Trim(), EvaluatedAtUtc = DateTimeOffset.UtcNow });
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<GoldenDatasetSummary> GetSummaryAsync(string tenantCode, string datasetCode, CancellationToken cancellationToken = default)
+    public Task<GoldenDatasetSummary> GetSummaryAsync(string tenantCode, string datasetCode, CancellationToken cancellationToken = default)
+        => GetSummaryCoreAsync(tenantCode, datasetCode, null, cancellationToken);
+
+    public Task<GoldenDatasetSummary> GetSummaryAsync(string tenantCode, string datasetCode, Guid releaseId, CancellationToken cancellationToken = default)
+        => GetSummaryCoreAsync(tenantCode, datasetCode, releaseId, cancellationToken);
+
+    private async Task<GoldenDatasetSummary> GetSummaryCoreAsync(string tenantCode, string datasetCode, Guid? releaseId, CancellationToken cancellationToken)
     {
         Require(tenantCode, 64, nameof(tenantCode)); Require(datasetCode, 128, nameof(datasetCode));
-        var cases = await db.Set<AiGoldenDatasetCaseRecord>().AsNoTracking().Where(x => x.TenantCode == tenantCode.Trim() && x.DatasetCode == datasetCode.Trim()).Select(x => new { x.Id, x.IsActive }).ToListAsync(cancellationToken);
+        var tenant = tenantCode.Trim(); var dataset = datasetCode.Trim();
+        var cases = await db.Set<AiGoldenDatasetCaseRecord>().AsNoTracking()
+            .Where(x => x.TenantCode == tenant && x.DatasetCode == dataset)
+            .Select(x => new { x.Id, x.IsActive }).ToListAsync(cancellationToken);
         var ids = cases.Where(x => x.IsActive).Select(x => x.Id).ToArray();
-        if (ids.Length == 0) return new(datasetCode.Trim(), cases.Count, 0, 0, 0, 0, null);
-        var evaluations = await db.Set<AiGoldenDatasetEvaluationRecord>().AsNoTracking().Where(x => ids.Contains(x.CaseId)).GroupBy(x => x.CaseId).Select(g => g.OrderByDescending(x => x.EvaluatedAtUtc).First()).ToListAsync(cancellationToken);
+        if (ids.Length == 0) return new(dataset, cases.Count, 0, 0, 0, 0, null);
+        var query = db.Set<AiGoldenDatasetEvaluationRecord>().AsNoTracking().Where(x => ids.Contains(x.CaseId) && x.TenantCode == tenant);
+        if (releaseId.HasValue) query = query.Where(x => x.ReleaseId == releaseId.Value);
+        var evaluations = await query.GroupBy(x => x.CaseId).Select(g => g.OrderByDescending(x => x.EvaluatedAtUtc).First()).ToListAsync(cancellationToken);
         var passed = evaluations.Count(x => x.Passed);
-        return new(datasetCode.Trim(), cases.Count, ids.Length, evaluations.Count, passed, evaluations.Count == 0 ? 0 : (double)passed / evaluations.Count, evaluations.Count == 0 ? null : evaluations.Max(x => x.EvaluatedAtUtc));
+        return new(dataset, cases.Count, ids.Length, evaluations.Count, passed, evaluations.Count == 0 ? 0 : (double)passed / evaluations.Count, evaluations.Count == 0 ? null : evaluations.Max(x => x.EvaluatedAtUtc));
     }
 
     private static void Require(string value, int max, string name) { if (string.IsNullOrWhiteSpace(value) || value.Trim().Length > max) throw new ArgumentException($"{name} is required and must be <= {max} characters.", name); }
