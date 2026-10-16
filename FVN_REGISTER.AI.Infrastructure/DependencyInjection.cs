@@ -19,7 +19,9 @@ public static class DependencyInjection
  public static IServiceCollection AddFvnAiInfrastructure(this IServiceCollection services,IConfiguration configuration)
  {
   services.Configure<AIPlatformOptions>(configuration.GetSection(AIPlatformOptions.SectionName)); services.Configure<KnowledgeSearchOptions>(configuration.GetSection("AIPlatform:KnowledgeSearch")); services.Configure<MalwareScannerOptions>(configuration.GetSection(MalwareScannerOptions.SectionName)); services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.SectionName));
-  var options=configuration.GetSection(AIPlatformOptions.SectionName).Get<AIPlatformOptions>()??new AIPlatformOptions(); var connection=configuration.GetConnectionString(options.ConnectionStringName);
+  var options=configuration.GetSection(AIPlatformOptions.SectionName).Get<AIPlatformOptions>()??new AIPlatformOptions();
+  if(!options.RequireContentBoundSignatures) throw new InvalidOperationException("AIPlatform:RequireContentBoundSignatures must be true. Production startup is refused when signed requests do not bind query/body content.");
+  var connection=configuration.GetConnectionString(options.ConnectionStringName);
   if(!string.IsNullOrWhiteSpace(connection)) services.AddDbContext<AiPlatformDbContext>(db=>db.UseSqlServer(connection,sql=>sql.EnableRetryOnFailure(3)));
   if(options.DefaultProvider.Equals("Ollama",StringComparison.OrdinalIgnoreCase))
   {
