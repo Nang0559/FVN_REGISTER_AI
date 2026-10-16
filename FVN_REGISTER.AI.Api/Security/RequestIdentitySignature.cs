@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -11,7 +10,6 @@ namespace FVN_REGISTER.AI.Api.Security;
 /// </summary>
 public static class RequestIdentitySignature
 {
-    private static readonly ConcurrentDictionary<string, DateTimeOffset> UsedNonces = new(StringComparer.Ordinal);
     private static readonly TimeSpan AllowedClockSkew = TimeSpan.FromMinutes(5);
 
     public static bool TryValidate(
@@ -24,7 +22,9 @@ public static class RequestIdentitySignature
         string nonce,
         string signature,
         DateTimeOffset nowUtc,
-        out string failure)
+        out string failure,
+        string queryString = "",
+        string bodySha256 = "")
     {
         failure = "Signed service identity is invalid.";
         if (string.IsNullOrWhiteSpace(signingKey) || signingKey.Length < 32)
@@ -52,7 +52,9 @@ public static class RequestIdentitySignature
             string.IsNullOrWhiteSpace(signature))
             return false;
 
-        var canonical = string.Join("\n", method.ToUpperInvariant(), path, tenantCode, actorId, timestamp, nonce);
+        var canonical = string.IsNullOrEmpty(bodySha256)
+            ? string.Join("\n", method.ToUpperInvariant(), path, tenantCode, actorId, timestamp, nonce)
+            : string.Join("\n", method.ToUpperInvariant(), path + queryString, tenantCode, actorId, timestamp, nonce, bodySha256.ToUpperInvariant());
         var key = Encoding.UTF8.GetBytes(signingKey);
         var expected = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(canonical));
         byte[] supplied;
@@ -61,17 +63,7 @@ public static class RequestIdentitySignature
         if (supplied.Length != expected.Length || !CryptographicOperations.FixedTimeEquals(expected, supplied))
             return false;
 
-        // Keep replay protection bounded and reject a nonce only after its signature is valid.
-        foreach (var item in UsedNonces)
-            if (item.Value < nowUtc) UsedNonces.TryRemove(item.Key, out _);
-
-        var replayKey = tenantCode + ":" + nonce;
-        if (!UsedNonces.TryAdd(replayKey, signedAt.Add(AllowedClockSkew)))
-        {
-            failure = "Signed service identity nonce has already been used.";
-            return false;
-        }
-
+        // Replay protection is persisted by the API in SQL so it works across replicas.
         return true;
     }
 }

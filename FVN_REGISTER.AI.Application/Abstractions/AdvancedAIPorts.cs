@@ -1,136 +1,17 @@
 using FVN_REGISTER.AI.Application.Contracts;
 namespace FVN_REGISTER.AI.Application.Abstractions;
-
-/// <summary>Scanner adapter must return Clean only after a positive engine verdict.</summary>
-public interface IMalwareScanner
-{
-    Task<MalwareScanResult> ScanAsync(Stream content, CancellationToken cancellationToken = default);
-}
-public sealed record MalwareScanResult(MalwareScanVerdict Verdict, string Engine, string? SignatureVersion, string? FailureCode);
-public enum MalwareScanVerdict { Clean, Infected, Unknown }
-
-public interface IDocumentPipeline
-{
-    Task ProcessAsync(Guid documentId, string workerId, CancellationToken cancellationToken = default);
-}
-
-public interface IDocumentReviewService
-{
-    Task<ReviewReceipt> ReviewAsync(Guid extractionId, string tenantCode, string reviewerId,
-        string decision, string? correctedPayloadJson, string? comment, CancellationToken cancellationToken = default);
-}
-public sealed record ReviewReceipt(Guid ReviewId, Guid DocumentId, string Decision, DateTimeOffset ReviewedAtUtc);
-
-public interface IKnowledgeSearchService
-{
-    Task<IReadOnlyList<KnowledgeSearchHit>> SearchAsync(string tenantCode, string actorId,
-        IReadOnlyCollection<string> allowedScopes, string query, int limit, CancellationToken cancellationToken = default);
-}
-public sealed record KnowledgeSearchHit(string ChunkId, string DocumentId, string FileName, int? PageNumber,
-    string Text, double Score, string Citation);
-
-public interface IFeedbackService
-{
-    Task RecordAsync(string tenantCode, string reviewerId, Guid? documentId, Guid? extractionId,
-        string feedbackType, string? beforeJson, string? afterJson, string? reason,
-        CancellationToken cancellationToken = default);
-}
-
-public interface IDocumentExtractionQueryService
-{
-    Task<ExtractionReviewView?> GetLatestAsync(Guid documentId, string tenantCode, string actorId, CancellationToken cancellationToken = default);
-}
-public sealed record ExtractionReviewView(Guid ExtractionId, Guid DocumentId, string DocumentType,
-    double ClassificationConfidence, string CandidateJson, string ParserVersion,
-    string? ModelProvider, string? ModelVersion, string? PromptVersion, DateTimeOffset CreatedAtUtc);
-
-/// <summary>Validates generic extraction candidates against a versioned module-owned schema.</summary>
-public interface IExtractionValidationService
-{
-    Task<ExtractionValidationResult> ValidateAsync(ExtractionValidationRequest request, CancellationToken cancellationToken = default);
-}
-
-/// <summary>Extracts fields according to a caller-supplied versioned schema, without module-specific assumptions.</summary>
-public interface ISchemaDrivenDocumentExtractor
-{
-    Task<IReadOnlyList<ExtractedCandidate>> ExtractAsync(string text, ExtractionSchema schema,
-        CancellationToken cancellationToken = default);
-}
-
-/// <summary>Explicitly publishes a human-approved document into the tenant-scoped knowledge index.</summary>
-public interface IKnowledgeIndexingService
-{
-    Task<int> PublishApprovedDocumentAsync(string tenantCode, Guid documentId, Guid reviewId,
-        IReadOnlyCollection<string> accessScopes, CancellationToken cancellationToken = default);
-    Task UnpublishDocumentAsync(string tenantCode, Guid documentId, CancellationToken cancellationToken = default);
-}
-
-public interface IFeedbackEvaluationService
-{
-    Task<FeedbackEvaluationSummary> GetSummaryAsync(string tenantCode, DateTimeOffset fromUtc,
-        DateTimeOffset toUtc, CancellationToken cancellationToken = default);
-}
-public sealed record FeedbackVersionMetric(string? ParserVersion, string? ModelVersion, string? PromptVersion,
-    int Accepted, int Rejected, int Corrected, int AnswerRatings);
-public sealed record FeedbackEvaluationSummary(int Total, int Accepted, int Rejected, int Corrected,
-    int AnswerRatings, double AcceptanceRate, IReadOnlyList<FeedbackVersionMetric> ByVersion);
-
-public interface IExtractionSchemaRegistry
-{
-    Task<ExtractionSchema?> GetPublishedAsync(string tenantCode, string moduleCode, string schemaCode,
-        CancellationToken cancellationToken = default);
-    Task<int> CreateDraftVersionAsync(string tenantCode, string moduleCode, ExtractionSchema schema,
-        string actorId, CancellationToken cancellationToken = default);
-    Task PublishVersionAsync(string tenantCode, string moduleCode, string schemaCode, int version,
-        string actorId, CancellationToken cancellationToken = default);
-}
-
-public interface IRagAnswerService
-{
-    Task<RagAnswerResult> AnswerAsync(string tenantCode, string actorId, IReadOnlyCollection<string> allowedScopes,
-        string query, int retrievalLimit = 8, CancellationToken cancellationToken = default);
-}
-public sealed record RagCitation(string ChunkId, string DocumentId, string FileName, int? PageNumber,
-    string Citation, double RelevanceScore);
-public sealed record RagAnswerResult(string Answer, string Status, IReadOnlyList<RagCitation> Citations,
-    string? ModelProvider, string? ModelVersion);
-
-
-/// <summary>
-/// Resolves knowledge ACLs from the trusted FVN_REGISTER authorization boundary.
-/// Implementations must never derive permissions from request-body scope values.
-/// </summary>
-public interface IAuthorizedKnowledgeAccessProvider
-{
-    Task<IReadOnlyCollection<string>> GetSearchScopesAsync(
-        string tenantCode, string actorId, CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyCollection<string>> GetPublicationScopesAsync(
-        string tenantCode, string actorId, Guid documentId, Guid reviewId,
-        CancellationToken cancellationToken = default);
-
-    Task AuthorizeUnpublishAsync(
-        string tenantCode, string actorId, Guid documentId,
-        CancellationToken cancellationToken = default);
-}
-
-
-/// <summary>Checks reviewer authority in the trusted FVN_REGISTER authorization boundary.</summary>
-public interface IAuthorizedDocumentReviewProvider
-{
-    Task AuthorizeReviewAsync(
-        string tenantCode, string actorId, Guid extractionId,
-        CancellationToken cancellationToken = default);
-}
-
-/// <summary>Checks schema administration rights in the trusted FVN_REGISTER authorization boundary.</summary>
-public interface IAuthorizedSchemaManagementProvider
-{
-    Task AuthorizeDraftAsync(
-        string tenantCode, string actorId, string moduleCode, string schemaCode,
-        CancellationToken cancellationToken = default);
-
-    Task AuthorizePublishAsync(
-        string tenantCode, string actorId, string moduleCode, string schemaCode, int version,
-        CancellationToken cancellationToken = default);
-}
+public interface IMalwareScanner{Task<MalwareScanResult> ScanAsync(Stream content,CancellationToken cancellationToken=default);} public sealed record MalwareScanResult(MalwareScanVerdict Verdict,string Engine,string? SignatureVersion,string? FailureCode); public enum MalwareScanVerdict{Clean,Infected,Unknown}
+public interface IDocumentPipeline{Task ProcessAsync(Guid documentId,string workerId,CancellationToken cancellationToken=default);}
+public interface IDocumentReviewService{Task<ReviewReceipt> ReviewAsync(Guid extractionId,string tenantCode,string reviewerId,string decision,string? correctedPayloadJson,string? comment,CancellationToken cancellationToken=default);} public sealed record ReviewReceipt(Guid ReviewId,Guid DocumentId,string Decision,DateTimeOffset ReviewedAtUtc);
+public interface IKnowledgeSearchService{Task<IReadOnlyList<KnowledgeSearchHit>> SearchAsync(string tenantCode,string actorId,IReadOnlyCollection<string> allowedScopes,string query,int limit,CancellationToken cancellationToken=default);} public sealed record KnowledgeSearchHit(string ChunkId,string DocumentId,string FileName,int? PageNumber,string Text,double Score,string Citation);
+public interface IFeedbackService{Task RecordAsync(string tenantCode,string reviewerId,Guid? documentId,Guid? extractionId,string feedbackType,string? beforeJson,string? afterJson,string? reason,CancellationToken cancellationToken=default);}
+public interface IDocumentExtractionQueryService{Task<ExtractionReviewView?> GetLatestAsync(Guid documentId,string tenantCode,string actorId,CancellationToken cancellationToken=default);} public sealed record ExtractionReviewView(Guid ExtractionId,Guid DocumentId,string DocumentType,double ClassificationConfidence,string CandidateJson,string ParserVersion,string? ModelProvider,string? ModelVersion,string? PromptVersion,DateTimeOffset CreatedAtUtc,string? RepresentationJson=null);
+public interface IExtractionValidationService{Task<ExtractionValidationResult> ValidateAsync(ExtractionValidationRequest request,CancellationToken cancellationToken=default);}
+public interface ISchemaDrivenDocumentExtractor{Task<IReadOnlyList<ExtractedCandidate>> ExtractAsync(string text,ExtractionSchema schema,CancellationToken cancellationToken=default);}
+public interface IKnowledgeIndexingService{Task<int> PublishApprovedDocumentAsync(string tenantCode,Guid documentId,Guid reviewId,IReadOnlyCollection<string> accessScopes,CancellationToken cancellationToken=default);Task UnpublishDocumentAsync(string tenantCode,Guid documentId,CancellationToken cancellationToken=default);}
+public interface IFeedbackEvaluationService{Task<FeedbackEvaluationSummary> GetSummaryAsync(string tenantCode,DateTimeOffset fromUtc,DateTimeOffset toUtc,CancellationToken cancellationToken=default);} public sealed record FeedbackVersionMetric(string? ParserVersion,string? ModelVersion,string? PromptVersion,int Accepted,int Rejected,int Corrected,int AnswerRatings); public sealed record FeedbackEvaluationSummary(int Total,int Accepted,int Rejected,int Corrected,int AnswerRatings,double AcceptanceRate,IReadOnlyList<FeedbackVersionMetric> ByVersion);
+public interface IExtractionSchemaRegistry{Task<ExtractionSchema?> GetPublishedAsync(string tenantCode,string moduleCode,string schemaCode,CancellationToken cancellationToken=default);Task<int> CreateDraftVersionAsync(string tenantCode,string moduleCode,ExtractionSchema schema,string actorId,CancellationToken cancellationToken=default);Task PublishVersionAsync(string tenantCode,string moduleCode,string schemaCode,int version,string actorId,CancellationToken cancellationToken=default);}
+public interface IRagAnswerService{Task<RagAnswerResult> AnswerAsync(string tenantCode,string actorId,IReadOnlyCollection<string> allowedScopes,string query,int retrievalLimit=8,CancellationToken cancellationToken=default);} public sealed record RagCitation(string ChunkId,string DocumentId,string FileName,int? PageNumber,string Citation,double RelevanceScore); public sealed record RagAnswerResult(string Answer,string Status,IReadOnlyList<RagCitation> Citations,string? ModelProvider,string? ModelVersion);
+public interface IAuthorizedKnowledgeAccessProvider{Task<IReadOnlyCollection<string>> GetSearchScopesAsync(string tenantCode,string actorId,CancellationToken cancellationToken=default);Task<IReadOnlyCollection<string>> GetPublicationScopesAsync(string tenantCode,string actorId,Guid documentId,Guid reviewId,CancellationToken cancellationToken=default);Task AuthorizeUnpublishAsync(string tenantCode,string actorId,Guid documentId,CancellationToken cancellationToken=default);}
+public interface IAuthorizedDocumentReviewProvider{Task AuthorizeReviewAsync(string tenantCode,string actorId,Guid extractionId,CancellationToken cancellationToken=default);}
+public interface IAuthorizedSchemaManagementProvider{Task AuthorizeDraftAsync(string tenantCode,string actorId,string moduleCode,string schemaCode,CancellationToken cancellationToken=default);Task AuthorizePublishAsync(string tenantCode,string actorId,string moduleCode,string schemaCode,int version,CancellationToken cancellationToken=default);}

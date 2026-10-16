@@ -8,12 +8,16 @@ using FVN_REGISTER.AI.Infrastructure;
 using FVN_REGISTER.AI.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Http.Features;
 var builder=WebApplication.CreateBuilder(args);
 var settings=builder.Configuration.GetSection(AIPlatformOptions.SectionName).Get<AIPlatformOptions>()??new AIPlatformOptions();
-builder.WebHost.ConfigureKestrel(o=>o.Limits.MaxRequestBodySize=(long)Math.Clamp(settings.MaximumFileSizeMb,1,250)*1024*1024+1024*1024);
+var maximumUploadBytes=(long)Math.Clamp(settings.MaximumFileSizeMb,1,250)*1024*1024;
+builder.WebHost.ConfigureKestrel(o=>o.Limits.MaxRequestBodySize=maximumUploadBytes+1024*1024);
+builder.Services.Configure<FormOptions>(o=>o.MultipartBodyLengthLimit=maximumUploadBytes+1024*1024);
 builder.Services.AddFvnAiInfrastructure(builder.Configuration);
 builder.Services.AddHealthChecks();
 var app=builder.Build();
+var replayCleanupCounter = 0;
 app.MapHealthChecks("/health");
 app.MapGet("/health/ready",async (IServiceProvider sp,CancellationToken ct)=>{
  var db=sp.GetService<AiPlatformDbContext>();
@@ -38,12 +42,44 @@ var group=app.MapGroup("/api/ai/v1").AddEndpointFilter(async (ctx,next)=>{
  var nonce=request.Headers["X-AI-Nonce"].ToString();
  var signature=request.Headers["X-AI-Signature"].ToString();
  var signingKey=app.Configuration[$"{AIPlatformOptions.SectionName}:ContextSigningKey"];
+ var bindContent = settings.RequireContentBoundSignatures;
+ var bodySha256 = string.Empty;
+ if (bindContent)
+ {
+  request.EnableBuffering();
+  using var hash = SHA256.Create();
+  var digest = await hash.ComputeHashAsync(request.Body, ctx.HttpContext.RequestAborted);
+  bodySha256 = Convert.ToHexString(digest);
+  request.Body.Position = 0;
+ }
  if(!RequestIdentitySignature.TryValidate(signingKey??string.Empty,request.Method,request.Path.Value??"/",
-     tenant,actor,timestamp,nonce,signature,DateTimeOffset.UtcNow,out var identityFailure))
+     tenant,actor,timestamp,nonce,signature,DateTimeOffset.UtcNow,out var identityFailure,
+     bindContent ? request.QueryString.Value ?? string.Empty : string.Empty, bodySha256))
  {
   if(string.IsNullOrWhiteSpace(signingKey)||signingKey.Length<32)
    return Results.Problem(identityFailure,statusCode:503);
   return Results.Unauthorized();
+ }
+
+ // Persist the nonce so replay attempts are rejected across API replicas.
+ var replayDb = ctx.HttpContext.RequestServices.GetService<AiPlatformDbContext>();
+ if (replayDb is null)
+  return Results.Problem("AI SQL connection is required for replay protection.", statusCode:503);
+ try
+ {
+  await replayDb.Database.ExecuteSqlInterpolatedAsync(
+   $"INSERT INTO ai.AiRequestNonces(TenantCode, Nonce, ExpiresAtUtc) VALUES ({tenant}, {nonce}, {DateTimeOffset.UtcNow.AddMinutes(5)})",
+   ctx.HttpContext.RequestAborted);
+ }
+ catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number is 2601 or 2627)
+ {
+  return Results.Unauthorized();
+ }
+ if ((Interlocked.Increment(ref replayCleanupCounter) & 0xFF) == 0)
+ {
+  await replayDb.Database.ExecuteSqlRawAsync(
+   "DELETE TOP (1000) FROM ai.AiRequestNonces WHERE ExpiresAtUtc < TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00')",
+   ctx.HttpContext.RequestAborted);
  }
  return await next(ctx);
 });

@@ -15,7 +15,9 @@ public sealed class GatewayHRCaseReviewerAuthorization(IConfiguration configurat
         HRCaseType caseType, CancellationToken cancellationToken = default)
     {
         var trusted = configuration.GetValue<bool>("AIPlatform:TrustFvnRegisterGatewayForHRReview");
-        return Task.FromResult(trusted &&
+        var signingKey = configuration["AIPlatform:ContextSigningKey"];
+        var hasValidSigningKey = !string.IsNullOrWhiteSpace(signingKey) && signingKey.Length >= 32;
+        return Task.FromResult(trusted && hasValidSigningKey &&
             !string.IsNullOrWhiteSpace(tenantCode) &&
             !string.IsNullOrWhiteSpace(actorId) &&
             !string.IsNullOrWhiteSpace(employeeCode));

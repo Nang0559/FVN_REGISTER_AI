@@ -12,9 +12,8 @@ namespace FVN_REGISTER.AI.Infrastructure.Services;
 /// SQL-backed vector store for moderate corpora. Tenant and ACL filtering happens before
 /// any candidate text is returned to the RAG orchestration layer.
 /// </summary>
-public sealed class SqlVectorKnowledgeStore(AiPlatformDbContext db) : IVectorKnowledgeStore
+public sealed class SqlVectorKnowledgeStore(AiPlatformDbContext db, ILogger<SqlVectorKnowledgeStore> logger) : IVectorKnowledgeStore
 {
-    private const int MaximumCandidates = 5000;
 
     public async Task UpsertAsync(string tenantCode, IReadOnlyCollection<KnowledgeChunk> chunks,
         IReadOnlyCollection<EmbeddingVector> vectors, CancellationToken cancellationToken = default)
@@ -95,6 +94,7 @@ public sealed class SqlVectorKnowledgeStore(AiPlatformDbContext db) : IVectorKno
             .FromSqlInterpolated($@"SELECT k.* FROM ai.AiKnowledgeChunks AS k
                 INNER JOIN ai.AiReviews AS r ON r.Id = k.ReviewId
                 WHERE k.TenantCode = {tenantCode} AND k.IsActive = 1
+                  AND r.TenantCode = {tenantCode} AND r.DocumentId = k.DocumentId
                   AND (r.Decision = N'Approved' OR r.Decision = N'Corrected')
                   AND k.EmbeddingJson IS NOT NULL
                   AND EXISTS (
@@ -103,8 +103,9 @@ public sealed class SqlVectorKnowledgeStore(AiPlatformDbContext db) : IVectorKno
                   )")
             .AsNoTracking()
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Take(MaximumCandidates)
             .ToListAsync(cancellationToken);
+
+        logger.LogDebug("Vector search scanned {CandidateCount} ACL-filtered chunks for tenant {TenantCode}.", rows.Count, tenantCode);
 
         var allowed = new HashSet<string>(allowedScopes.Where(x => !string.IsNullOrWhiteSpace(x)), StringComparer.OrdinalIgnoreCase);
         var results = new List<KnowledgeSearchCandidate>();

@@ -8,7 +8,8 @@ public sealed record ExtractionSchema(
     int Version,
     string DisplayName,
     IReadOnlyList<ExtractionFieldDefinition> Fields,
-    IReadOnlyList<ExtractionRuleDefinition>? Rules = null);
+    IReadOnlyList<ExtractionRuleDefinition>? Rules = null,
+    IReadOnlyList<ExtractionFieldMapping>? Mappings = null);
 
 public sealed record ExtractionFieldDefinition(
     string Path,
@@ -20,6 +21,12 @@ public sealed record ExtractionFieldDefinition(
     decimal? Maximum = null,
     string? Pattern = null,
     IReadOnlyList<string>? AllowedValues = null);
+
+/// <summary>Declarative source-to-target mapping. Source hints guide extraction; TargetPath is the canonical output path.</summary>
+public sealed record ExtractionFieldMapping(
+    string TargetPath,
+    IReadOnlyList<string> SourceHints,
+    string Normalization = "None");
 
 public sealed record ExtractionRuleDefinition(
     string Code,
@@ -50,3 +57,15 @@ public sealed record ExtractionValidationResult(
     IReadOnlyList<ExtractedCandidate> AcceptedCandidates,
     IReadOnlyList<ExtractionValidationIssue> Issues,
     bool IsValid);
+
+public sealed record StandardizedExtractionResult(
+    string SchemaCode,
+    int SchemaVersion,
+    IReadOnlyList<ExtractedCandidate> Candidates,
+    ExtractionValidationResult Validation,
+    string RepresentationVersion,
+    string SourceTextSha256,
+    string ParserVersion,
+    string? ModelProvider,
+    string? ModelVersion,
+    string? PromptVersion);

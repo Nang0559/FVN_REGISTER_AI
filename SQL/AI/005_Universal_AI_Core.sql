@@ -50,6 +50,7 @@ IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiKnowled
  ON ai.AiKnowledgeChunks(TenantCode,IsActive,DocumentId) INCLUDE(ChunkOrdinal,EmbeddingModel,PageNumber);
 GO
 
+
 IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiKnowledgeChunks') AND name=N'UX_AiKnowledgeChunks_Tenant_Document_Ordinal')
  CREATE UNIQUE INDEX UX_AiKnowledgeChunks_Tenant_Document_Ordinal
  ON ai.AiKnowledgeChunks(TenantCode,DocumentId,ChunkOrdinal);

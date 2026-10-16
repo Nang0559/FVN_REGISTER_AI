@@ -109,3 +109,23 @@ CREATE TABLE ai.AiModelDeployments(
  CONSTRAINT CK_AiModelDeployments_Config CHECK(ISJSON(ConfigurationJson)=1 AND ISJSON(AllowedDataClassesJson)=1)
 );
 GO
+
+/* Tenant-scoped access paths used by extraction, review, validation and RAG publication. */
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiExtractions') AND name=N'IX_AiExtractions_Tenant_Document_Created')
+ CREATE INDEX IX_AiExtractions_Tenant_Document_Created ON ai.AiExtractions(TenantCode,DocumentId,CreatedAtUtc DESC);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiValidationIssues') AND name=N'IX_AiValidationIssues_Extraction_Created')
+ CREATE INDEX IX_AiValidationIssues_Extraction_Created ON ai.AiValidationIssues(ExtractionId,CreatedAtUtc DESC);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiReviews') AND name=N'IX_AiReviews_Tenant_Document_Reviewed')
+ CREATE INDEX IX_AiReviews_Tenant_Document_Reviewed ON ai.AiReviews(TenantCode,DocumentId,ReviewedAtUtc DESC);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiReviews') AND name=N'IX_AiReviews_Tenant_Extraction_Reviewed')
+ CREATE INDEX IX_AiReviews_Tenant_Extraction_Reviewed ON ai.AiReviews(TenantCode,ExtractionId,ReviewedAtUtc DESC);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiFeedback') AND name=N'IX_AiFeedback_Tenant_Created')
+ CREATE INDEX IX_AiFeedback_Tenant_Created ON ai.AiFeedback(TenantCode,CreatedAtUtc DESC);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'ai.AiKnowledgeChunks') AND name=N'IX_AiKnowledgeChunks_Tenant_Document_Active')
+ CREATE INDEX IX_AiKnowledgeChunks_Tenant_Document_Active ON ai.AiKnowledgeChunks(TenantCode,DocumentId,IsActive,ChunkOrdinal);
+GO

@@ -7,3 +7,4 @@ public sealed record DocumentExtractionResult(string DocumentType, double Classi
 public sealed record EmbeddingVector(string Model, IReadOnlyList<float> Values);
 public sealed record KnowledgeChunk(string ChunkId, string DocumentId, string Text, IReadOnlyDictionary<string,string> Metadata);
 public sealed record HumanFeedback(Guid Id, Guid DocumentId, string ReviewerId, string Decision, string? CorrectedPayload, string? Comment, DateTimeOffset SubmittedAtUtc);
+public sealed record ReviewReceipt(Guid ReviewId, Guid DocumentId, string Decision, DateTimeOffset ReviewedAtUtc);
