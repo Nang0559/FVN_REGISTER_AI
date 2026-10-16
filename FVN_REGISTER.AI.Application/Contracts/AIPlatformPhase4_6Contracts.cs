@@ -15,6 +15,7 @@ public interface IGoldenDatasetService
 {
     Task<Guid> AddCaseAsync(string tenantCode, string actorId, string datasetCode, string caseType, string inputJson, string expectedJson, string? rubricJson, CancellationToken cancellationToken = default);
     Task<GoldenDatasetSummary> GetSummaryAsync(string tenantCode, string datasetCode, CancellationToken cancellationToken = default);
+    Task<GoldenDatasetSummary> GetSummaryAsync(string tenantCode, string datasetCode, Guid releaseId, CancellationToken cancellationToken = default);
 }
 public sealed record AIRelease(Guid Id, string TenantCode, string ReleaseCode, string ModelProvider, string ModelVersion, string PromptVersion, string? SchemaCode, int? SchemaVersion, string GoldenDatasetCode, string Status, double MinimumAcceptanceRate, DateTimeOffset CreatedAtUtc, DateTimeOffset? PromotedAtUtc, DateTimeOffset? RetiredAtUtc);
 public sealed record AIReleaseGateResult(bool Passed, double AcceptanceRate, int DecisionCount, int GoldenCases, int GoldenPassed, string[] Failures);
