@@ -27,9 +27,9 @@ public sealed class AIReleaseService(AiPlatformDbContext db, IGoldenDatasetServi
     public async Task<AIReleaseGateResult> EvaluateGateAsync(string tenantCode, Guid releaseId, CancellationToken cancellationToken = default)
     {
         var tenant=tenantCode.Trim(); var release=await db.Set<AiModelReleaseRecord>().AsNoTracking().SingleOrDefaultAsync(x=>x.Id==releaseId&&x.TenantCode==tenant,cancellationToken)??throw new KeyNotFoundException("AI release was not found.");
-        var feedback=await db.Feedback.AsNoTracking().Where(x=>x.TenantCode==tenant&&x.ModelVersion==release.ModelVersion&&x.PromptVersion==release.PromptVersion).Select(x=>x.FeedbackType).ToListAsync(cancellationToken);
+        var feedback=await db.Feedback.AsNoTracking().Where(x=>x.TenantCode==tenant&&x.ReleaseId==release.Id).Select(x=>x.FeedbackType).ToListAsync(cancellationToken);
         var accepted=feedback.Count(x=>x=="Accept"); var rejected=feedback.Count(x=>x=="Reject"); var corrected=feedback.Count(x=>x=="Correct"); var decisions=accepted+rejected+corrected; var acceptance=decisions==0?0:(double)accepted/decisions;
-        var dataset=await golden.GetSummaryAsync(tenant,release.GoldenDatasetCode,cancellationToken); var failures=new List<string>();
+        var dataset=await golden.GetSummaryAsync(tenant,release.GoldenDatasetCode,release.Id,cancellationToken); var failures=new List<string>();
         if(decisions<MinimumHumanDecisions) failures.Add($"HUMAN_DECISION_COUNT_LT_{MinimumHumanDecisions}");
         if(acceptance<release.MinimumAcceptanceRate) failures.Add("ACCEPTANCE_RATE_BELOW_GATE");
         if(dataset.ActiveCases<MinimumGoldenCases) failures.Add("GOLDEN_DATASET_NOT_READY"); else if(dataset.CompletedCases<dataset.ActiveCases) failures.Add("GOLDEN_DATASET_INCOMPLETE"); else if(dataset.PassRate<1) failures.Add("GOLDEN_DATASET_HAS_FAILURES");
