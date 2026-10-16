@@ -10,12 +10,13 @@ using Microsoft.Extensions.Options;
 namespace FVN_REGISTER.AI.Infrastructure.Providers;
 
 /// <summary>Local Ollama chat adapter. The caller owns grounding, authorization and human approval.</summary>
-public sealed class OllamaAIModelProvider(HttpClient httpClient, IOptions<AIPlatformOptions> options) : IAIModelProvider
+public sealed class OllamaAIModelProvider(HttpClient httpClient, IOptions<AIPlatformOptions> options) : IAIModelProvider, IAIModelProvenance
 {
     private readonly AIPlatformOptions _options = options.Value;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public string ProviderName => "Ollama";
+    public string ModelVersion => string.IsNullOrWhiteSpace(_options.Model) ? "Unconfigured" : _options.Model.Trim();
 
     public async Task<AIModelResponse> GenerateAsync(AIModelRequest request, CancellationToken cancellationToken = default)
     {
