@@ -23,13 +23,13 @@ migrations=(
   011_Persistent_Request_Replay_Protection.sql
   012_KnowledgeChunkConstraint_And_ChecksumLedger.sql
   013_HRCaseTextColumnSizeRepair.sql
+  014_Phase5_ReleaseRetentionTenantHardening.sql
 )
 
 scalar() {
   "$SQLCMD_PATH" "${args[@]}" -h -1 -W -Q "SET NOCOUNT ON; $1" | tr -d '\r' | sed '/^[[:space:]]*$/d' | tail -n 1 | xargs
 }
 
-# Only a truly empty AI database may claim that checksums for 001-009 were verified.
 fresh=0
 exists="$(scalar "SELECT CASE WHEN OBJECT_ID(N'ai.AiDocuments',N'U') IS NULL THEN 0 ELSE 1 END")"
 if [[ "$exists" == "0" ]]; then fresh=1; fi
@@ -39,8 +39,6 @@ for file in "${migrations[@]}"; do
   [[ -f "$path" ]] || { echo "Missing migration: $path" >&2; exit 2; }
   id="${file%.sql}"
   checksum="$(sha256sum "$path" | awk '{print toupper($1)}')"
-
-  # Verify recorded checksums before reapplying a known migration.
   has_ledger="$(scalar "SELECT CASE WHEN OBJECT_ID(N'ai.AiSchemaMigrations',N'U') IS NOT NULL AND COL_LENGTH(N'ai.AiSchemaMigrations',N'Sha256Checksum') IS NOT NULL THEN 1 ELSE 0 END")"
   if [[ "$has_ledger" == "1" ]]; then
     recorded="$(scalar "SELECT COALESCE(MAX(Sha256Checksum),'') FROM ai.AiSchemaMigrations WHERE MigrationId=N'$id'")"
@@ -49,27 +47,23 @@ for file in "${migrations[@]}"; do
       exit 3
     fi
   fi
-
   echo "Applying $file"
   "$SQLCMD_PATH" "${args[@]}" -i "$path"
 done
 
-# Populate the checksum ledger only after 012 has added its columns.
 for file in "${migrations[@]}"; do
   id="${file%.sql}"
   checksum="$(sha256sum "$MIGRATIONS_DIR/$file" | awk '{print toupper($1)}')"
   num="${id:0:3}"
-  if [[ "$fresh" == "1" || "$num" == "010" || "$num" == "011" || "$num" == "012" ]]; then
+  if [[ "$fresh" == "1" || "$num" == "010" || "$num" == "011" || "$num" == "012" || "$num" == "013" || "$num" == "014" ]]; then
     checksumSql="'$checksum'"
   else
-    # Existing DBs may have applied older file contents; record as an unverified baseline.
     checksumSql="NULL"
   fi
   "$SQLCMD_PATH" "${args[@]}" -Q "
     IF EXISTS (SELECT 1 FROM ai.AiSchemaMigrations WHERE MigrationId=N'$id')
       UPDATE ai.AiSchemaMigrations
-         SET MigrationFileName=N'$file',
-             Sha256Checksum=COALESCE(Sha256Checksum, $checksumSql)
+         SET MigrationFileName=N'$file', Sha256Checksum=COALESCE(Sha256Checksum,$checksumSql)
        WHERE MigrationId=N'$id';
     ELSE
       INSERT INTO ai.AiSchemaMigrations(MigrationId,MigrationFileName,Sha256Checksum)
@@ -77,4 +71,4 @@ for file in "${migrations[@]}"; do
   "
 done
 
-echo "Applied all 13 AI migrations; checksum ledger updated."
+echo "Applied all 14 AI migrations; checksum ledger updated."
