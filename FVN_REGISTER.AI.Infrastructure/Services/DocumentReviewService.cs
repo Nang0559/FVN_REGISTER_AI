@@ -1,13 +1,12 @@
 using System.Text.Json;
-using FVN_REGISTER.AI.Application.Abstractions;
 using FVN_REGISTER.AI.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace FVN_REGISTER.AI.Infrastructure.Services;
 
-public sealed class DocumentReviewService(AiPlatformDbContext db, IAuthorizedDocumentReviewProvider authorization) : IDocumentReviewService
+public sealed class DocumentReviewService(AiPlatformDbContext db, FVN_REGISTER.AI.Application.Abstractions.IAuthorizedDocumentReviewProvider authorization) : FVN_REGISTER.AI.Application.Abstractions.IDocumentReviewService
 {
-    public async Task<ReviewReceipt> ReviewAsync(Guid extractionId, string tenantCode, string reviewerId, string decision, string? correctedPayloadJson, string? comment, CancellationToken cancellationToken = default)
+    public async Task<FVN_REGISTER.AI.Application.Contracts.ReviewReceipt> ReviewAsync(Guid extractionId, string tenantCode, string reviewerId, string decision, string? correctedPayloadJson, string? comment, CancellationToken cancellationToken = default)
     {
         tenantCode = Required(tenantCode, 64, nameof(tenantCode));
         reviewerId = Required(reviewerId, 128, nameof(reviewerId));
@@ -23,19 +22,20 @@ public sealed class DocumentReviewService(AiPlatformDbContext db, IAuthorizedDoc
         if (document.Status is "Archived" or "Rejected") throw new InvalidOperationException("DOCUMENT_NOT_REVIEWABLE");
         await authorization.AuthorizeReviewAsync(tenantCode, reviewerId, extractionId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var review = new AiReviewRecord { Id = Guid.NewGuid(), ExtractionId = extraction.Id, DocumentId = extraction.DocumentId, TenantCode = tenantCode, ReviewerId = reviewerId, Decision = decision, OriginalPayloadJson = extraction.CandidateJson, CorrectedPayloadJson = decision == "Corrected" ? correctedPayloadJson : null, Comment = comment?.Trim(), ReviewedAtUtc = now };
+        var review = new AiReviewRecord { Id = Guid.NewGuid(), ExtractionId = extraction.Id, DocumentId = extraction.DocumentId, TenantCode = tenantCode, ReviewerId = reviewerId, Decision = decision, OriginalPayloadJson = extraction.CandidateJson ?? "{}", CorrectedPayloadJson = decision == "Corrected" ? correctedPayloadJson : null, Comment = comment?.Trim(), ReviewedAtUtc = now };
         document.Status = decision == "Rejected" ? "Rejected" : "Approved";
+        if (decision == "Rejected") document.DedupActive = false;
         if (decision == "Corrected") extraction.CandidateJson = correctedPayloadJson!;
         db.Reviews.Add(review);
         await db.SaveChangesAsync(cancellationToken);
-        return new ReviewReceipt(review.Id, review.DocumentId, review.Decision, now);
+        return new FVN_REGISTER.AI.Application.Contracts.ReviewReceipt(review.Id, review.DocumentId, review.Decision, now);
     }
     private static string Required(string value, int max, string name) => string.IsNullOrWhiteSpace(value) || value.Trim().Length > max ? throw new ArgumentException($"Value must contain 1 to {max} characters.", name) : value.Trim();
 }
 
 public sealed class AiExtractionRecord
 {
-    public Guid Id { get; set; } public Guid DocumentId { get; set; } public string TenantCode { get; set; } = ""; public string DocumentType { get; set; } = ""; public decimal ClassificationConfidence { get; set; } public string? SchemaCode { get; set; } public int? SchemaVersion { get; set; } public string ValidationStatus { get; set; } = "NotRun"; public string CandidateJson { get; set; } = "{}"; public string? RepresentationJson { get; set; } public string? ValidationSummaryJson { get; set; } public string? ProvenanceJson { get; set; } public string ParserVersion { get; set; } = ""; public string? ModelProvider { get; set; } public string? ModelVersion { get; set; } public string? PromptVersion { get; set; } public DateTimeOffset CreatedAtUtc { get; set; }
+    public Guid Id { get; set; } public Guid DocumentId { get; set; } public string TenantCode { get; set; } = ""; public Guid? ReleaseId { get; set; } public string DocumentType { get; set; } = ""; public decimal ClassificationConfidence { get; set; } public string? SchemaCode { get; set; } public int? SchemaVersion { get; set; } public string ValidationStatus { get; set; } = "NotRun"; public string? CandidateJson { get; set; } public string? RepresentationJson { get; set; } public string? ValidationSummaryJson { get; set; } public string? ProvenanceJson { get; set; } public string ParserVersion { get; set; } = ""; public string? ModelProvider { get; set; } public string? ModelVersion { get; set; } public string? PromptVersion { get; set; } public DateTimeOffset CreatedAtUtc { get; set; }
 }
 public sealed class AiReviewRecord
 {
