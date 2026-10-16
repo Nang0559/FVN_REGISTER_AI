@@ -21,6 +21,7 @@ public sealed class DocumentPipeline(
     IExtractionValidationService validationService) : IDocumentPipeline
 {
     private const string ParserVersion = "local-text-v2";
+    private const int MaximumPipelineTextCharacters = 2_000_000;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task ProcessAsync(Guid documentId, string workerId, CancellationToken cancellationToken = default)
@@ -30,7 +31,6 @@ public sealed class DocumentPipeline(
         if (!leaseOwned) throw new InvalidOperationException("INGESTION_LEASE_LOST");
         var document = await db.Documents.SingleOrDefaultAsync(x => x.Id == documentId, cancellationToken) ?? throw new InvalidOperationException("INGESTION_DOCUMENT_NOT_FOUND");
         if (document.Status is "Approved" or "Rejected" or "Archived") throw new InvalidOperationException("DOCUMENT_ALREADY_REVIEWED");
-        if (await db.Extractions.AnyAsync(x => x.DocumentId == documentId, cancellationToken)) return;
 
         await using var scanStream = await store.OpenReadAsync(document.StorageKey, cancellationToken);
         var scan = await scanner.ScanAsync(scanStream, cancellationToken);
@@ -44,11 +44,15 @@ public sealed class DocumentPipeline(
         await using var content = await store.OpenReadAsync(document.StorageKey, cancellationToken);
         var rawText = await textExtractor.ExtractTextAsync(content, document.MediaType, cancellationToken);
         if (string.IsNullOrWhiteSpace(rawText)) throw new InvalidDataException("EXTRACTION_EMPTY_DOCUMENT");
-        if (rawText.Length > 2_000_000) rawText = rawText[..2_000_000];
+        var sourceTextTruncated = rawText.Length > MaximumPipelineTextCharacters;
+        if (sourceTextTruncated) rawText = rawText[..MaximumPipelineTextCharacters];
         var representation = await representationExtractor.ExtractAsync(rawText, document.MediaType, cancellationToken);
         var modelText = representation.ToModelText();
         if (string.IsNullOrWhiteSpace(modelText)) throw new InvalidDataException("EXTRACTION_EMPTY_REPRESENTATION");
         var (documentType, confidence) = await classifier.ClassifyAsync(modelText, cancellationToken);
+        var modelProvenance = classifier as IAIModelProvenance;
+        var modelProvider = modelProvenance?.ProviderName ?? "Unknown";
+        var modelVersion = modelProvenance?.ModelVersion ?? "Unknown";
         var fullTextHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(modelText))).ToLowerInvariant();
         var representationJson = JsonSerializer.Serialize(representation, JsonOptions);
 
@@ -81,17 +85,20 @@ public sealed class DocumentPipeline(
                 schemaVersion = schema.Version,
                 issueCount = validation.Issues.Count,
                 errorCount = validation.Issues.Count(x => string.Equals(x.Severity, "Error", StringComparison.OrdinalIgnoreCase)),
-                acceptedCount = validation.AcceptedCandidates.Count
+                acceptedCount = validation.AcceptedCandidates.Count,
+                sourceTextTruncated,
+                truncationLimit = sourceTextTruncated ? MaximumPipelineTextCharacters : (int?)null
             }, JsonOptions);
             provenanceJson = JsonSerializer.Serialize(new
             {
                 source = new { documentId = document.Id, sha256 = document.Sha256, sourceType = document.SourceType, sourceReference = document.SourceReference },
                 representation = new { version = representation.Version, mediaType = representation.MediaType, isOcr = representation.IsOcr, textSha256 = fullTextHash },
                 schema = new { schemaCode = schema.SchemaCode, schemaVersion = schema.Version },
-                model = new { provider = classifier.GetType().Name, promptVersion },
+                model = new { provider = modelProvider, version = modelVersion, promptVersion },
+                processing = new { sourceTextTruncated, truncationLimit = sourceTextTruncated ? MaximumPipelineTextCharacters : (int?)null },
                 mapping = schema.Mappings?.Select(x => new { x.TargetPath, x.SourceHints, x.Normalization }).ToArray()
             }, JsonOptions);
-            var standardized = new StandardizedExtractionResult(schema.SchemaCode, schema.Version, mapped, validation, representation.Version, fullTextHash, parserVersion, classifier.GetType().Name, "provider-routed", promptVersion);
+            var standardized = new StandardizedExtractionResult(schema.SchemaCode, schema.Version, mapped, validation, representation.Version, fullTextHash, parserVersion, modelProvider, modelVersion, promptVersion);
             candidate = new
             {
                 standardized,
@@ -99,38 +106,51 @@ public sealed class DocumentPipeline(
                 fileName = document.FileName,
                 documentType,
                 source = new { sha256 = document.Sha256 },
-                warnings = new[] { "AI extraction is a candidate and requires human review.", "No official business data has been changed." }
+                warnings = sourceTextTruncated
+                    ? new[] { "AI extraction is a candidate and requires human review.", "Source text exceeded the 2,000,000 character pipeline limit and was truncated.", "No official business data has been changed." }
+                    : new[] { "AI extraction is a candidate and requires human review.", "No official business data has been changed." }
             };
         }
         else
         {
-            candidate = BuildCandidate(document, documentType, modelText);
+            candidate = BuildCandidate(document, documentType, modelText, sourceTextTruncated);
             provenanceJson = JsonSerializer.Serialize(new
             {
                 source = new { documentId = document.Id, sha256 = document.Sha256, sourceType = document.SourceType, sourceReference = document.SourceReference },
                 representation = new { version = representation.Version, mediaType = representation.MediaType, isOcr = representation.IsOcr, textSha256 = fullTextHash },
-                model = new { provider = classifier.GetType().Name, promptVersion }
+                model = new { provider = modelProvider, version = modelVersion, promptVersion },
+                processing = new { sourceTextTruncated, truncationLimit = sourceTextTruncated ? MaximumPipelineTextCharacters : (int?)null }
             }, JsonOptions);
         }
 
+        var release = await db.Set<AiModelReleaseRecord>().AsNoTracking()
+            .Where(x => x.TenantCode == document.TenantCode &&
+                        (x.Status == "Candidate" || x.Status == "Active") &&
+                        x.ModelProvider == modelProvider && x.ModelVersion == modelVersion &&
+                        x.PromptVersion == promptVersion &&
+                        x.SchemaCode == schemaCode && x.SchemaVersion == schemaVersion)
+            .OrderByDescending(x => x.Status == "Candidate")
+            .ThenByDescending(x => x.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var extraction = new AiExtractionRecord
         {
-            Id = Guid.NewGuid(), DocumentId = document.Id, TenantCode = document.TenantCode,
+            Id = Guid.NewGuid(), DocumentId = document.Id, TenantCode = document.TenantCode, ReleaseId = release?.Id,
             DocumentType = documentType, ClassificationConfidence = (decimal)confidence,
             SchemaCode = schemaCode, SchemaVersion = schemaVersion, ValidationStatus = validationStatus,
             CandidateJson = JsonSerializer.Serialize(candidate, JsonOptions), RepresentationJson = representationJson,
             ValidationSummaryJson = validationSummaryJson, ProvenanceJson = provenanceJson,
-            ParserVersion = parserVersion, ModelProvider = classifier.GetType().Name,
-            ModelVersion = "provider-routed", PromptVersion = promptVersion, CreatedAtUtc = DateTimeOffset.UtcNow
+            ParserVersion = parserVersion, ModelProvider = modelProvider,
+            ModelVersion = modelVersion, PromptVersion = promptVersion, CreatedAtUtc = DateTimeOffset.UtcNow
         };
         db.Extractions.Add(extraction);
         foreach (var issue in validationIssues)
-            db.ValidationIssues.Add(new AiValidationIssueRecord { Id = Guid.NewGuid(), ExtractionId = extraction.Id, FieldPath = issue.Path, RuleCode = issue.Code, Severity = issue.Severity, Message = issue.Message, CreatedAtUtc = DateTimeOffset.UtcNow });
+            db.ValidationIssues.Add(new AiValidationIssueRecord { Id = Guid.NewGuid(), TenantCode = document.TenantCode, ExtractionId = extraction.Id, FieldPath = issue.Path, RuleCode = issue.Code, Severity = issue.Severity, Message = issue.Message, CreatedAtUtc = DateTimeOffset.UtcNow });
         document.Status = "AwaitingHumanReview";
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private static object BuildCandidate(AiDocumentRecord document, string type, string text)
+    private static object BuildCandidate(AiDocumentRecord document, string type, string text, bool sourceTextTruncated)
     {
         var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var evidenceRows = new List<object>(); var pageNumber = 1;
@@ -149,6 +169,9 @@ public sealed class DocumentPipeline(
             ["dayCandidates"] = System.Text.RegularExpressions.Regex.Matches(text, @"(?i)\b(?<value>\d{1,3}(?:[.,]\d{1,2})?)\s*(?:ngày|days?)\b").Select(m => m.Groups["value"].Value).Distinct().Take(100).ToArray(),
             ["emailCandidates"] = System.Text.RegularExpressions.Regex.Matches(text, @"(?i)\b[^\s@]+@[^\s@]+\.[^\s@]+\b").Select(m => m.Value).Distinct().Take(100).ToArray()
         };
-        return new { schemaVersion = "1.0", documentId = document.Id, fileName = document.FileName, documentType = type, source = new { sha256 = document.Sha256 }, extractedFields = fields, evidence = evidenceRows.ToArray(), fullTextSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant(), warnings = new[] { "Candidate is machine-generated and requires human verification.", "No official HR record has been changed." } };
+        var warnings = sourceTextTruncated
+            ? new[] { "Candidate is machine-generated and requires human verification.", "Source text exceeded the 2,000,000 character pipeline limit and was truncated.", "No official HR record has been changed." }
+            : new[] { "Candidate is machine-generated and requires human verification.", "No official HR record has been changed." };
+        return new { schemaVersion = "1.0", documentId = document.Id, fileName = document.FileName, documentType = type, source = new { sha256 = document.Sha256 }, extractedFields = fields, evidence = evidenceRows.ToArray(), fullTextSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant(), warnings };
     }
 }
