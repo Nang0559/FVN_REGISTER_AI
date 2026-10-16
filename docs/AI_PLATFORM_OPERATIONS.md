@@ -1,105 +1,124 @@
-# FVN_REGISTER AI Platform — Operations Runbook
+# FVN_REGISTER AI Platform — Operations
 
-This runbook is for the dedicated `FVN_AI` database and the `feature/ai-platform-phase1-6` implementation. It is not a claim that production operations have already been exercised.
+## Scope
 
-## Architecture at a glance
+This is the current operational guide for `feature/ai-platform-phase1-6`. The canonical phase status is the root `AI_PLATFORM_PHASES_STATUS.md`; do not use an older phase-status copy under `docs/`.
 
-```mermaid
-flowchart LR
-  FVN[FVN_REGISTER UI / API / RBAC] -->|signed service request| AIA[AI API]
-  AIA --> Q[(FVN_AI SQL Server)]
-  AIA --> S[Quarantine / durable document storage]
-  Q --> W[AI Worker / leased queue]
-  W --> X[AV scan / parsing / OCR / extraction]
-  X --> V[Schema validation + provenance]
-  V --> H[Human review]
-  H --> K[Approved knowledge / embeddings]
-  K --> R[Tenant + ACL filtered retrieval]
-  R --> L[LLM / embedding provider]
-  L --> AIA
+## 1. Topology
+
+```text
+FVN_REGISTER -> signed AI API -> SQL metadata/queue + quarantine storage
+                                      |
+                                      v
+                                  AI Worker
+                                      |
+                    AV -> extraction -> validation -> human review
+                                      |
+                          approved/corrected knowledge
+                                      |
+                           ACL + tenant filtered RAG
 ```
 
-FVN_REGISTER remains the authority for identity, RBAC, official HR data, approvals and business writes. AI-generated content is a candidate, not a business decision. The production authorization adapters for Phase 3–5 are still incomplete.
+## 2. Configuration and secrets
 
-## Configuration and secrets
+Required production settings:
 
-Supply settings through environment variables, .NET user-secrets in development, or an approved secret manager in production. Never commit secret values.
+- `ConnectionStrings:FvnAi`
+- `AIPlatform:ApiKey`
+- `AIPlatform:ContextSigningKey` (minimum 32 bytes/characters for HMAC validation)
+- `AIPlatform:RequireContentBoundSignatures=true` — startup fails if disabled.
+- Provider endpoint/model and embedding model according to the approved provider.
+- ClamAV/Tesseract/Poppler runtime dependencies when enabled.
 
-| Setting / secret | Purpose | Handling |
-|---|---|---|
-| `ConnectionStrings__DefaultConnection` | Dedicated FVN_AI SQL Server connection | Least-privilege SQL login; TLS; rotate credentials |
-| `AIPlatform__ContextSigningKey` | HMAC key shared with trusted FVN_REGISTER gateway | At least 32 random characters; keep identical only across trusted signer/API; rotate via coordinated rollout |
-| `AIPlatform__RequireContentBoundSignatures` | Binds signature to path+query and SHA-256 body | Keep false until gateway signer implements matching canonicalization; then enable together |
-| `AIPlatform__ApiKey` (if configured) | Service/API authentication | Secret manager; separate per environment |
-| `AIPlatform__DefaultProvider`, `Endpoint`, `Model` | Chat provider/model (currently local Ollama supported) | Restrict network egress; pin model/version |
-| `AIPlatform__EmbeddingModel` and embedding endpoint/provider settings | Embedding provider/model | Version embeddings and plan re-indexing before model changes |
-| `AIPlatform__Ocr__TesseractExecutable`, `PdfToPpmExecutable`, `Languages`, `Dpi`, `TimeoutSeconds` | OCR executables, languages and limits | Install binaries/language packs on API/Worker hosts; test file size/timeouts |
-| Storage root / malware scanner configuration | Durable originals, quarantine and AV verdicts | Shared durable storage for all replicas; encrypt at rest; scanner must fail closed |
-| ASP.NET/Kestrel upload limits | Maximum accepted upload and multipart body | Keep proxy, Kestrel and application limits aligned |
+Secrets must come from the deployment secret store/environment, never from committed `appsettings*.json`.
 
-Confirm exact configuration binding against the deployed `AIPlatformOptions` before release; do not assume optional keys are active merely because they are listed here.
+## 3. Request integrity and replay
 
-## Migration sequence, ledger and drift
+Requests use HMAC identity signatures. With content-bound signatures enabled, method/path/query/body are included in the signed material, protecting multipart `moduleCode`/`schemaCode` and review `CorrectedPayloadJson` from tampering.
 
-For an empty dedicated database, apply `SQL/AI/001_...` through `SQL/AI/012_...` in numeric order. Do not run these migrations against the FVN_REGISTER operational database.
+The timestamp acceptance window is ±5 minutes. Migration `014` installs a SQL trigger that guarantees a nonce expiry of at least 10 minutes, closing the future-timestamp replay gap.
 
-- Migration 012 is a forward convergence guard for the knowledge-chunk ordinal unique index. Migration 003 does not carry the added index block; historical migration 005 retains its pre-existing guarded index for clean installs. Migration 012 ensures older installations converge even when that index is absent, and fails if duplicates exist.
-- Migration 010 introduced the ledger. Migration 012 adds `MigrationFileName` and `Sha256Checksum`. A NULL checksum means the file was applied before checksum tracking or its exact source could not be verified; do not label it checksum-verified.
-- Use `scripts/apply-ai-migrations.sh` for deployments. It checks known checksums before applying and registers checksum metadata where it can safely verify the file. Run it once for deployment; CI invokes it twice to exercise repeatability.
-- Back up the database and verify restore before production migration. Take a schema/data snapshot or tested full backup, record current migration rows, and rehearse on a restored copy.
-- Do not edit a migration already applied to any shared environment. Add a new numbered migration and update the runner/workflow list instead.
-- Migration 012 fails if duplicate `(TenantCode, DocumentId, ChunkOrdinal)` rows exist. Reconcile duplicates explicitly; never delete knowledge or audit records automatically as a generic migration side effect. Migration 013 fixes HR case text-column lengths; its clean-install predecessor had invalid `NVARCHAR(8000)` declarations, which SQL Server rejects.
+## 4. Migration order
 
-## Rollback and recovery
+For an empty database use exactly this sequence:
 
-SQL schema changes are not generally rolled back by replaying old scripts. The default recovery is **forward-fix**:
+`001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 → 011 → 012 → 013 → 014`
 
-1. Stop AI API/Worker writes and pause queue consumers.
-2. Take a fresh backup and preserve migration ledger, application logs and affected document IDs.
-3. Restore the last verified backup to a separate database and validate it before any cutover.
-4. If only the newest migration is faulty and no dependent writes occurred, use a reviewed, migration-specific rollback script on a clone first. Do not drop columns/tables or unique indexes blindly.
-5. Prefer a new corrective migration for production; deploy code compatible with both old/new schema during rollout.
-6. Resume workers gradually and verify queue depth, failures, extraction counts, tenant boundaries and audit trails.
+Migration `014_Phase5_ReleaseRetentionTenantHardening.sql` is the forward migration for:
 
-Migration 012's unique index can be removed as a narrowly scoped rollback only after assessing duplicate creation and application dependencies. No automatic destructive rollback is provided.
+- release-bound extraction/feedback provenance;
+- model-aware extraction uniqueness, including a guard for `SchemaVersion IS NULL`;
+- tenant columns and composite FKs for validation/golden evaluations;
+- purge/re-upload dedup lifecycle;
+- ten-minute replay retention;
+- document state propagation for lease/dead-letter;
+- nullable purgeable knowledge/extraction payloads.
 
-## Backup and restore
+Never edit an already-applied migration to change its historical behavior. The migration runner records filename and SHA-256 where verification is supported; legacy 001–009 records can remain NULL when their historical checksum cannot be reconstructed.
 
-- Use SQL Server full backups plus differential/log backups according to the site's RPO/RTO; include encryption and off-host/offline retention.
-- Back up document/object storage separately and preserve its mapping to `StorageKey`; a SQL-only restore is incomplete if originals are missing.
-- Back up model/prompt/schema configuration and secret-manager references (never secret plaintext in the backup manifest).
-- Periodically restore SQL and document storage together into an isolated environment. Verify document hashes, tenant ownership, schema versions, reviews, knowledge chunks, queue leases and ability to reprocess.
-- Define and record RPO/RTO with the system owner before production sign-off.
+## 5. Apply and rollback
 
-## Metrics and structured logs
+Use `scripts/apply-ai-migrations.sh`. It applies all 14 migrations and verifies recorded checksums before executing them.
 
-Emit structured logs with correlation/request ID, tenant identifier (not personal payload), document/job ID, provider/model/version, duration, retry count and failure code. Never log raw HR evidence, document bodies, prompts containing PII, signing keys or API tokens.
+Rollback is forward-only at the application/schema level: restore from a tested SQL backup for destructive rollback, or create a new compensating migration. Do not delete rows from `AiSchemaMigrations` to bypass the ledger.
 
-At minimum monitor:
+Before any production migration:
 
-- Queue depth by status, oldest queued age, active/expired leases, retries and dead-letter count.
-- Ingestion accepted/rejected/quarantined count and malware scanner timeout/failure.
-- Extraction/validation duration, schema-not-found, issue counts and human-review backlog/age.
-- Embedding tokens/items, embedding latency/errors, indexed chunk count and re-index jobs.
-- LLM input/output tokens, latency, timeout/rate-limit/error rate, abstention/citation failure rate.
-- Per-tenant request counts, authorization denials, replay-signature denials and cross-tenant access test failures.
-- SQL CPU/IO, query duration, connection pool pressure, storage growth and backup/restore age.
+1. take a full SQL backup;
+2. verify backup restore on a non-production instance;
+3. stop or drain ingestion workers where the migration changes queue semantics;
+4. apply migrations;
+5. run the SQL validation workflow and smoke checks;
+6. resume workers only after the database is healthy.
 
-Alert on sustained queue age, dead letters, repeated provider failures, abnormal cost/token spikes, missing backups and any authorization/tenant-boundary regression. Keep retention bounded and avoid high-cardinality personal identifiers in metric labels.
+## 6. Retention
 
-## Embedding and LLM cost model
+`ArchiveExpiredAsync` now coordinates original storage, document state, extraction payloads and knowledge chunks. Expired `Rejected` documents are included. Knowledge chunks are marked inactive and their `Content`/`EmbeddingJson` cleared. `AiExtractions.CandidateJson` and `RepresentationJson` are cleared. Archived documents set `DedupActive=false`, allowing an identical file to be uploaded again.
 
-Local Ollama has no per-token provider invoice, but it is not zero-cost: GPU/CPU time, RAM/VRAM, power, storage, model operations and capacity opportunity cost must be measured. Hosted providers may bill input/output tokens and embedding tokens, plus storage, reranking, OCR, network and retry overhead.
+## 7. Queue and failure handling
 
-Track monthly by tenant and model:
-- Chat cost = input tokens × input rate + output tokens × output rate (for hosted providers).
-- Embedding cost = embedded tokens × embedding rate; count initial indexing and re-indexing separately.
-- Total operating cost = hosted inference + compute amortization + storage + OCR/AV + monitoring/backup + operator time.
+A claimed job moves its document to `Processing`. Retryable failures return the document to `Quarantined`; terminal dead-letter moves it to `Failed`. Lease recovery follows the same rule. Re-uploading an identical fingerprint requeues an existing `DeadLetter`/`Failed` job when its retained original still exists.
 
-Use model/token budgets, max document size/page count, request rate limits, embedding deduplication by content hash, caching where policy allows, and alerts on re-indexing loops. Prices/rates are provider- and model-specific; fetch current rates from the selected provider at deployment time rather than hard-coding them here.
+## 8. RAG and scale boundary
 
-## Tenant isolation and defense in depth
+The current store uses tenant/ACL-filtered SQL candidate loading and application cosine scoring. It is intentionally a PoC/medium-corpus baseline. Candidate scan limit and minimum score are configuration points, but benchmark evidence is still required before production scale.
 
-Application queries and stored procedures that serve a tenant must include an explicit tenant predicate and use tenant context derived from the trusted gateway, not from client-supplied filters. Queue claim/recovery procedures are intentionally cross-tenant schedulers; they may claim any queued job but must not return document contents or grant user access.
+SQL Server 2025 provides native `VECTOR`, `VECTOR_DISTANCE` and `VECTOR_SEARCH`; an eventual migration can use server-side exact kNN or an approximate vector index after compatibility and recall benchmarks. urlSQL Server vector search documentationhttps://learn.microsoft.com/en-us/sql/sql-server/ai/vectors?view=sql-server-ver17
 
-The current SQL Server CI suite checks tenant-scoped duplicate protection, guards the RAG vector query for both chunk and review tenant/document identity, and rejects newly added tenant-sensitive stored procedures that contain no `TenantCode` reference unless they are on the explicit queue-scheduler allowlist. This is a useful guard, **not proof that every EF/LINQ query in every endpoint is tenant-safe**; complete endpoint-by-endpoint integration tests and code review remain a release gate. Row-Level Security (RLS) is a possible second layer, but should only be enabled after the platform sets `SESSION_CONTEXT` on every connection, resets it safely with pooling, and tests background-worker semantics. RLS is not currently claimed as enabled.
+## 9. Monitoring
+
+At minimum collect:
+
+- queue depth, oldest queued job and dead-letter count;
+- lease expiry/recovery count;
+- extraction duration, validation error rate and human-review latency;
+- provider/model/prompt release usage and failure rate;
+- embedding call count/latency and chunk count;
+- RAG candidate scan count, score distribution, latency and abstention rate;
+- retention purge count and failed purge operations;
+- release-gate decision count, acceptance rate and golden pass rate.
+
+Never log document contents, embeddings, HMAC secrets, API keys or sensitive HR payloads.
+
+## 10. Cost controls
+
+Track embedding and LLM calls by tenant/module/release where allowed. Chunk overlap increases embedding volume; bounded concurrency reduces wall-clock time but does not reduce provider cost. Set provider timeouts, maximum input size, chunk limits and candidate scan limits. Any external provider requires explicit data-classification/privacy approval.
+
+## 11. Backup/restore
+
+Back up:
+
+- AI SQL database;
+- original/quarantine storage;
+- deployment configuration/secret references;
+- migration ledger.
+
+A restore is not complete until SQL, original storage and their document SHA-256/storage keys are mutually consistent. Knowledge chunks must be rebuildable from retained approved sources when embeddings are not restored.
+
+## 12. Tenant isolation release gate
+
+CI verifies tenant predicates in the RAG retrieval query, tenant references in reviewed AI stored procedures, tenant-scoped duplicate behavior, and composite tenant FKs. These checks are not proof that every future EF/LINQ endpoint is tenant-safe. Endpoint-by-endpoint tenant/ACL review remains a release gate. SQL Server Row-Level Security is not enabled by this migration set.
+
+## 13. CI
+
+`.github/workflows/ai-platform-sql-validation.yml` runs SQL Server 2022 integration checks, applies migrations 001–014 twice, verifies checksums and constraints, tests duplicate legacy ordinal failure, concurrent lease claims, nonce replay, dead-letter document state, tenant-scoped deduplication, and the AI unit-test project.
